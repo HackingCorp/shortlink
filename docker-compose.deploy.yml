@@ -5,6 +5,14 @@ services:
       dockerfile: Dockerfile
       args:
         - DB_PASSWORD=kutes_secure_2024
+        - S3P_BASE_URL=https://s3pv2cm.smobilpay.com/v2
+        - S3P_ACCESS_TOKEN=9183eee1-bf8b-49cb-bffc-d466706d3aef
+        - S3P_ACCESS_SECRET=c5821829-a9db-4cf1-9894-65e3caffaa62
+        - S3P_SERVICE_ID=1
+        - ENKAP_CONSUMER_KEY=wXRF_8iU7h9UNiBG4zNYFdCQPwga
+        - ENKAP_CONSUMER_SECRET=rD9fRGJkVVs8TZtfjJ0VTD7taOsa
+        - ENKAP_TOKEN_URL=https://api-v2.enkap.cm/token
+        - ENKAP_API_BASE_URL=https://api-v2.enkap.cm/purchase/v1.2
     container_name: shortlink-app
     restart: unless-stopped
     ports:
@@ -28,14 +36,14 @@ services:
       - SMTP_PASS=ofbm hedm gzvu aznf
       - EMAIL_FROM=ShortLink <cessumaxime1@gmail.com>
       - NEXT_PUBLIC_DISABLE_EMAIL_VERIFICATION=false
-      - S3P_BASE_URL=https://s3p.smobilpay.staging.maviance.info/v2
-      - S3P_ACCESS_TOKEN=776c15fb-9e90-43cc-b8ce-85281ea26592
-      - S3P_ACCESS_SECRET=ba625c55-8aa8-4112-af09-339183248c8a
+      - S3P_BASE_URL=https://s3pv2cm.smobilpay.com/v2
+      - S3P_ACCESS_TOKEN=9183eee1-bf8b-49cb-bffc-d466706d3aef
+      - S3P_ACCESS_SECRET=c5821829-a9db-4cf1-9894-65e3caffaa62
       - S3P_SERVICE_ID=1
-      - ENKAP_CONSUMER_KEY=yYeXpfeQnqOtlcjtgCzZm3mqKjEa
-      - ENKAP_CONSUMER_SECRET=fkq7k8_kcfIL7E1nTs0TVZqF7VQa
-      - ENKAP_TOKEN_URL=https://api.enkap-staging.maviance.info/token
-      - ENKAP_API_BASE_URL=https://api.enkap-staging.maviance.info/purchase/v1.2/api
+      - ENKAP_CONSUMER_KEY=wXRF_8iU7h9UNiBG4zNYFdCQPwga
+      - ENKAP_CONSUMER_SECRET=rD9fRGJkVVs8TZtfjJ0VTD7taOsa
+      - ENKAP_TOKEN_URL=https://api-v2.enkap.cm/token
+      - ENKAP_API_BASE_URL=https://api-v2.enkap.cm/purchase/v1.2
     networks:
       - kut_app-network
       - web
