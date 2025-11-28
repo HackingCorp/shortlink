@@ -1,0 +1,61 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - DB_PASSWORD=kutes_secure_2024
+    container_name: shortlink-app
+    restart: unless-stopped
+    ports:
+      - "3200:3200"
+    environment:
+      - NODE_ENV=production
+      - PORT=3200
+      - HOSTNAME=0.0.0.0
+      - NEXTAUTH_URL=https://kut.es
+      - NEXT_PUBLIC_BASE_URL=https://kut.es
+      - NEXT_PUBLIC_APP_URL=https://kut.es
+      - DATABASE_URL=postgresql://kutes:kutes_secure_2024@kutes-db:5432/kutes_prod?schema=public&connection_limit=20
+      - DB_PASSWORD=kutes_secure_2024
+      - NEXTAUTH_SECRET=q8vNnZCJMt4wop+v3lIxmtpBENULwLHDIkLDj/Hdxls=
+      - JWT_SECRET=Y5ScwAwBeaZ9JbExKRJ6zP2rT42UDijSDMH+D1QfEn4=
+      - HASH_SECRET=44kyTt2nUszJTiRlpwPUPpLc/X1jXhUP0weaQB3eQ+8=
+      - REDIS_URL=redis://kut-redis:6379
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=cessumaxime1@gmail.com
+      - SMTP_PASS=ofbm hedm gzvu aznf
+      - EMAIL_FROM=ShortLink <cessumaxime1@gmail.com>
+      - NEXT_PUBLIC_DISABLE_EMAIL_VERIFICATION=false
+      - S3P_BASE_URL=https://s3p.smobilpay.staging.maviance.info/v2
+      - S3P_ACCESS_TOKEN=776c15fb-9e90-43cc-b8ce-85281ea26592
+      - S3P_ACCESS_SECRET=ba625c55-8aa8-4112-af09-339183248c8a
+      - S3P_SERVICE_ID=1
+      - ENKAP_CONSUMER_KEY=yYeXpfeQnqOtlcjtgCzZm3mqKjEa
+      - ENKAP_CONSUMER_SECRET=fkq7k8_kcfIL7E1nTs0TVZqF7VQa
+      - ENKAP_TOKEN_URL=https://api.enkap-staging.maviance.info/token
+      - ENKAP_API_BASE_URL=https://api.enkap-staging.maviance.info/purchase/v1.2/api
+    networks:
+      - kut_app-network
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=web"
+      - "traefik.http.routers.shortlink.rule=Host(`kut.es`)"
+      - "traefik.http.routers.shortlink.entrypoints=websecure"
+      - "traefik.http.routers.shortlink.tls=true"
+      - "traefik.http.routers.shortlink.tls.certresolver=le"
+      - "traefik.http.services.shortlink.loadbalancer.server.port=3200"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3200"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  kut_app-network:
+    external: true
+  web:
+    external: true
