@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: kutes-db
+    environment:
+      POSTGRES_USER: kutes
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: kutes_prod
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kutes -d kutes_prod -h localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    command: postgres -c max_connections=200 -c shared_buffers=256MB
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=production
+        - DATABASE_URL=postgresql://kutes:${DB_PASSWORD}@db:5432/kutes_prod?schema=public&connection_limit=20
+        - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+        - NEXTAUTH_URL=${NEXTAUTH_URL}
+        - JWT_SECRET=${JWT_SECRET}
+        - HASH_SECRET=${HASH_SECRET}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"  # Changé le port externe
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://kutes:${DB_PASSWORD}@db:5432/kutes_prod?schema=public&connection_limit=20
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - HASH_SECRET=${HASH_SECRET}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMAIL_FROM=${EMAIL_FROM}
+    depends_on:
+      db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  postgres_data:

@@ -1,0 +1,285 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            Int
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       Int
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id                String            @id @default(uuid())
+  ptn               String?           @unique
+  externalId        String?           @unique // ID de transaction externe (S3P)
+  quoteId           String?           // ID de devis S3P
+  paymentReference  String?           // Référence de paiement
+  amount            Int
+  currency          String            @default("XAF")
+  fees              Int?              // Frais de transaction
+  totalAmount       Int?              // Montant total (montant + frais)
+  merchant          String?
+  operator          String?           // Opérateur mobile (MTN, Orange, etc.)
+  serviceId         String?           // ID du service S3P
+  payItemId         String?           // ID de l'élément de paiement S3P
+  transactionType   TransactionType   @default(PAYMENT) // Type de transaction
+  customerName      String?
+  customerEmail     String?
+  customerPhone     String?
+  metadata          Json?             // Métadonnées supplémentaires
+  errorCode         String?           // Code d'erreur S3P
+  errorMessage      String?           // Message d'erreur S3P
+  receiptNumber     String?           // Numéro de reçu
+  verificationCode  String?           // Code de vérification
+  verificationTries Int               @default(0)
+  verifiedAt        DateTime?         // Date de vérification
+  expiresAt         DateTime?         // Date d'expiration
+  paidAt            DateTime?         // Date de paiement
+  processedAt       DateTime?         // Date de traitement
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  userId            Int?
+  status            TransactionStatus @default(PENDING)
+  user              User?             @relation(fields: [userId], references: [id])
+
+  @@index([ptn])
+  @@index([externalId])
+  @@index([quoteId])
+  @@index([paymentReference])
+  @@index([status])
+  @@index([transactionType])
+  @@index([customerEmail])
+  @@index([customerPhone])
+  @@index([createdAt])
+  @@index([paidAt])
+}
+enum TransactionType {
+  PAYMENT
+  REFUND
+  SUBSCRIPTION
+  OTHER
+}
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model User {
+  id                     Int              @id @default(autoincrement())
+  username               String?          @unique
+  email                  String           @unique
+  name                   String?
+  emailVerified          DateTime?
+  password               String
+  createdAt              DateTime         @default(now())
+  updatedAt              DateTime         @updatedAt
+  role                   UserRole         @default(FREE)
+  planExpiresAt          DateTime?
+  isAdmin                Boolean          @default(false)
+  planStartedAt          DateTime?
+  paymentStatus          String?          @default("inactive")
+  paymentMethod          String?
+  paymentLastFour        String?
+  verificationCode       String?
+  verificationCodeExpiry DateTime?
+  subscriptionId         String?
+  customerId             String?
+  accounts               Account[]
+  apiKeys                ApiKey[]
+  clicks                 Click[]
+  links                  Link[]
+  payments               Payment[]
+  sessions               Session[]
+  ownedTeams             Team[]           @relation("TeamOwner")
+  invitationsSent        TeamInvitation[] @relation("Inviter")
+  teamMemberships        TeamMember[]
+  transactions           Transaction[]
+  teams                  Team[]           @relation("TeamMembers")
+}
+model Plan {
+  id          String   @id @default(uuid())
+  name        String   // "standard", "pro", "enterprise"
+  displayName String   // "Standard", "Pro", "Entreprise"
+  price       Int      // 9990, 19990, 32900 (en FCFA)
+  currency    String   @default("FCFA")
+  period      String   @default("monthly")
+  features    String[] // Liste des fonctionnalités en JSON
+  maxClicks   Int?     // 10000, 50000, null pour illimité
+  maxTeamMembers Int?  // 5, 15, 50
+  maxApiKeys  Int?     // null, 2, null pour illimité
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Team {
+  id          Int              @id @default(autoincrement())
+  name        String
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  ownerId     Int
+  links       Link[]
+  owner       User             @relation("TeamOwner", fields: [ownerId], references: [id])
+  invitations TeamInvitation[]
+  teamMembers TeamMember[]
+  members     User[]           @relation("TeamMembers")
+}
+
+model TeamMember {
+  id       Int      @id @default(autoincrement())
+  teamId   Int
+  userId   Int
+  role     TeamRole @default(MEMBER)
+  joinedAt DateTime @default(now())
+  team     Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model TeamInvitation {
+  id          Int      @id @default(autoincrement())
+  email       String
+  token       String   @unique
+  role        TeamRole @default(MEMBER)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+  teamId      Int
+  invitedById Int
+  inviter     User     @relation("Inviter", fields: [invitedById], references: [id])
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+}
+
+model Link {
+  id          Int       @id @default(autoincrement())
+  short_code  String    @unique
+  long_url    String
+  title       String?
+  click_count  Int       @default(0)
+  share_count  Int       @default(0)
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+  expires_at   DateTime?
+  user_id      Int?
+  team_id     Int?
+  clicks      Click[]
+  team        Team?     @relation(fields: [team_id], references: [id], onDelete: Cascade)
+  user        User?     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model Click {
+  id          Int      @id @default(autoincrement())
+  clicked_at  DateTime @default(now())
+  ip_address  String?
+  user_agent   String?
+  referer      String?
+  referer_site String?
+  country      String?
+  city        String?
+  device_type String?
+  browser     String?
+  os          String?
+  raw_data    Json?
+  link_id     Int
+  user_id     Int?
+  link        Link     @relation(fields: [link_id], references: [id], onDelete: Cascade)
+  user        User?    @relation(fields: [user_id], references: [id])
+}
+
+model ApiKey {
+  id        Int       @id @default(autoincrement())
+  key       String    @unique
+  name      String
+  createdAt DateTime  @default(now())
+  lastUsed  DateTime?
+  userId    Int
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SystemConfig {
+  id                     Int      @id @default(1)
+  slug_generation_length Int      @default(2)
+  updatedAt              DateTime @updatedAt
+}
+
+model Payment {
+  id            Int      @id @default(autoincrement())
+  userId        Int
+  amount        Float
+  currency      String   @default("XAF")
+  paymentMethod String
+  paymentId     String?  @unique
+  status        String   @default("pending")
+  plan          UserRole
+  periodStart   DateTime
+  periodEnd     DateTime
+  isYearly      Boolean  @default(false)
+  receiptUrl    String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  metadata      Json?
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([paymentId])
+  @@index([status])
+  @@index([plan])
+  @@index([periodStart, periodEnd])
+}
+
+enum UserRole {
+  FREE
+  STANDARD
+  PRO
+  ENTERPRISE
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  EXPIRED
+  CANCELLED
+}
+
+enum ReferentialAction {
+  NoAction
+  Cascade
+  Restrict
+  SetNull
+  SetDefault
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+}

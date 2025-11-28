@@ -1,0 +1,76 @@
+Rapport d'État d'Avancement - Projet Shortlink
+==============================================
+
+Ce document présente un résumé des fonctionnalités clés implémentées dans l'application Shortlink, avec des explications techniques sur leur mise en œuvre. L'objectif est de fournir une vue d'ensemble claire pour une présentation de projet.
+
+
+### 1. Redirection Conditionnelle et Monétisation de la Vitesse
+
+**Objectif :** Créer une incitation à la mise à niveau pour les utilisateurs gratuits en modulant la vitesse de redirection des liens.
+
+**Comment ça marche :**
+- **Utilisateurs Payants (`STANDARD`, `PRO`, `ENTERPRISE`) :** Bénéficient d'une redirection instantanée vers l'URL de destination. C'est une fonctionnalité premium qui garantit la meilleure expérience utilisateur.
+- **Utilisateurs Gratuits (`FREE`) et Anonymes (`GUEST`) :** Sont dirigés vers une page d'attente intermédiaire (`/redirect-wait`) qui affiche un compte à rebours de 5 secondes avant la redirection finale.
+
+**Implémentation Technique :**
+- La logique est gérée côté serveur dans le fichier `pages/[short_code].tsx` via la fonction `getServerSideProps`.
+- Lorsqu'un lien court est visité, le serveur récupère les informations du lien depuis la base de données Prisma, y compris le rôle de l'utilisateur qui l'a créé.
+- En fonction du rôle, `getServerSideProps` renvoie une instruction de redirection (`redirect`) soit directement vers l'URL longue, soit vers la page `/redirect-wait` avec l'URL cible en paramètre.
+- Cette approche côté serveur est robuste, sécurisée et performante.
+
+
+### 2. Dashboard de Statistiques Détaillées
+
+**Objectif :** Fournir aux utilisateurs des données analytiques précises sur la performance de leurs liens.
+
+**Comment ça marche :**
+- Le tableau de bord affiche des graphiques (camemberts) pour visualiser la répartition des clics par :
+  - Navigateur (Chrome, Firefox, etc.)
+  - Système d'exploitation (Windows, macOS, etc.)
+  - Type d'appareil (Desktop, Mobile)
+  - Pays d'origine
+  - Sites référents
+
+**Implémentation Technique :**
+- **Correction Majeure :** Les graphiques étaient initialement cassés à cause d'une API défaillante. Le problème a été résolu en réécrivant entièrement l'endpoint `pages/api/stats/global.ts`.
+- **Performance Optimisée :** La nouvelle API utilise `prisma.click.groupBy`. Cette fonction délègue l'agrégation des données directement à la base de données, ce qui est extrêmement performant et évite de charger des milliers de clics en mémoire côté serveur.
+- **Parallélisation :** Toutes les requêtes d'agrégation (pour les navigateurs, OS, etc.) sont lancées en parallèle avec `Promise.all` pour un temps de réponse minimal.
+- **Frontend :** Les données formatées sont ensuite envoyées aux composants React de la librairie Tremor (`DonutChart`) qui se chargent de l'affichage.
+
+
+### 3. Gestion d'Équipes pour les Comptes Entreprise
+
+**Objectif :** Permettre aux entreprises de collaborer sur la gestion des liens (création, statistiques partagées).
+
+**Comment ça marche :**
+- Les propriétaires de comptes `ENTERPRISE` peuvent créer des équipes, inviter des membres par e-mail et leur assigner des rôles (Admin, Membre, etc.).
+- Les liens peuvent être créés au nom de l'équipe, et leurs statistiques sont visibles par tous les membres autorisés.
+
+**Implémentation Technique :**
+- **Schéma Prisma Étendu :** Les modèles `Team`, `TeamMember` et `TeamInvitation` ont été ajoutés à la base de données pour gérer les équipes, les appartenances et les invitations sécurisées par jeton.
+- **APIs dédiées :** Une série d'endpoints a été créée sous `/api/team/[teamId]/...` pour gérer toutes les actions : CRUD des équipes, gestion des membres, acceptation des invitations, création de liens d'équipe.
+- **Permissions Fines :** La logique métier assure que seul le propriétaire peut supprimer une équipe ou que les invitations ont une durée de validité.
+
+
+### 4. Système de Clés d'API pour les Développeurs
+
+**Objectif :** Permettre aux utilisateurs `PRO` et `ENTERPRISE` d'intégrer la création de liens dans leurs propres applications.
+
+**Comment ça marche :**
+- Les utilisateurs peuvent générer et révoquer des clés d'API depuis leur tableau de bord.
+- La clé n'est affichée qu'une seule fois lors de sa création pour des raisons de sécurité.
+
+**Implémentation Technique :**
+- Un endpoint sécurisé (`/api/user/api-keys`) gère la création et la gestion des clés, qui sont stockées de manière sécurisée dans la base de données.
+- La validation des clés pour les requêtes API se fait via un middleware ou directement dans les endpoints concernés.
+
+---
+
+**Stack Technique Principale :**
+- **Framework :** Next.js (React)
+- **Base de données :** PostgreSQL
+- **ORM :** Prisma
+- **Authentification :** Next-Auth
+- **UI / Graphiques :** TailwindCSS, Tremor
+
+Ce rapport couvre les avancées les plus significatives du projet. Chaque fonctionnalité a été conçue pour être robuste, performante et sécurisée, posant des bases solides pour de futures évolutions.

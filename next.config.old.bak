@@ -1,0 +1,164 @@
+const path = require('path');
+const dotenv = require('dotenv');
+const { compilerOptions } = require('./tsconfig.paths.json');
+
+// Chargement des variables d'environnement depuis .env.local ou .env
+dotenv.config();
+
+// Vérification de la présence de DATABASE_URL
+if (!process.env.DATABASE_URL) {
+  console.error('ERREUR: La variable d\'environnement DATABASE_URL est manquante');
+  console.log('Vérifiez que le fichier .env contient bien DATABASE_URL avec le format correct:');
+  console.log('postgresql://utilisateur:motdepasse@localhost:5432/nom_de_la_base?schema=public');
+  process.exit(1);
+}
+
+// Vérification du format de DATABASE_URL
+if (!process.env.DATABASE_URL.startsWith('postgresql://') && !process.env.DATABASE_URL.startsWith('postgres://')) {
+  console.error('ERREUR: Le format de DATABASE_URL est incorrect');
+  console.log('Le format doit commencer par postgresql:// ou postgres://');
+  console.log('Valeur actuelle:', process.env.DATABASE_URL);
+  process.exit(1);
+}
+
+/** @type {import('next').NextConfig} */
+const nextConfig = {
+  reactStrictMode: true,
+  swcMinify: true,
+  // Activation du mode strict pour TypeScript
+  typescript: {
+    ignoreBuildErrors: false,
+  },
+  // Activation du mode strict pour ESLint
+  eslint: {
+    ignoreDuringBuilds: false,
+  },
+  // Configuration des variables d'environnement
+  env: {
+    NEXTAUTH_URL: process.env.NEXTAUTH_URL,
+    JWT_SECRET: process.env.JWT_SECRET,
+    DATABASE_URL: process.env.DATABASE_URL,
+    NEXTAUTH_SECRET: process.env.NEXTAUTH_SECRET,
+    NEXT_PUBLIC_SITE_URL: process.env.NEXT_PUBLIC_SITE_URL,
+  },
+  
+  // Configuration des alias de chemins
+  webpack: (config, { isServer }) => {
+    // Configuration de base des alias
+    const baseAliases = {
+      // Ajoutez ici les alias essentiels si nécessaire
+      // Exemple: '@/components': path.resolve(__dirname, 'components')
+    };
+    
+    // Fusion avec la configuration existante
+    config.resolve.alias = {
+      ...(config.resolve.alias || {}),
+      ...baseAliases
+    };
+    
+    return config;
+  },
+  
+  // Configuration des redirections pour les liens courts
+  async rewrites() {
+    return [
+      // Redirection des URLs courtes vers l'API de redirection
+      // Ne correspond qu'aux chaînes de 2 caractères exactement
+      {
+        source: '/:short_code([^\\/]{2})',
+        destination: '/api/redirect/:short_code',
+      },
+      // Redirection pour la page d'attente
+      {
+        source: '/redirect-wait',
+        destination: '/redirect-wait',
+      },
+    ];
+  },
+  
+  // Configuration des en-têtes de sécurité
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          // Configuration CSP
+          {
+            key: 'Content-Security-Policy',
+            value: [
+              "default-src 'self';",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://basemaps.cartocdn.com;",
+              "style-src 'self' 'unsafe-inline' https://basemaps.cartocdn.com;",
+              "img-src 'self' data: https://*.tile.openstreetmap.org https://*.cartocdn.com;",
+              "connect-src 'self' https://basemaps.cartocdn.com;",
+              "font-src 'self' data:;",
+              "frame-ancestors 'none';",
+              "form-action 'self';",
+              "base-uri 'self';",
+              "object-src 'none';",
+            ].join(' ')
+          }
+        ],
+      },
+    ];
+  },
+  
+  // Configuration des images
+  images: {
+    domains: [
+      'localhost',
+      'avatars.githubusercontent.com',
+      'lh3.googleusercontent.com',
+      'platform-lookaside.fbsbx.com',
+      's.gravatar.com',
+    ],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**',
+      },
+    ],
+    deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    formats: ['image/webp'],
+    minimumCacheTTL: 60 * 60 * 24 * 30, // 30 jours
+    dangerouslyAllowSVG: true,
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
+    imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
+    formats: ['image/avif', 'image/webp'],
+  },
+  
+  // Configuration de la compilation
+  compiler: {
+    // Active l'optimisation des images
+    // removeConsole: process.env.NODE_ENV === 'production', // Supprime les console.log en production
+  },
+  
+  // Configuration de la régénération statique
+  // (utile pour les pages statiques)
+  // generateEtags: true,
+  
+  // Désactive le polyfill pour les modules natifs de Node.js
+  // (améliore les performances)
+  // future: {
+  //   webpack5: true,
+  // },
+};
+
+module.exports = nextConfig;

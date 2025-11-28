@@ -1,0 +1,43 @@
+import prisma from './prisma';
+
+const CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const MIN_LENGTH = 2;
+const MAX_LENGTH = 5;
+const MAX_RETRIES_PER_LENGTH = 20;
+
+function generateRandomString(length: number): string {
+  let result = '';
+  for (let i = 0; i < length; i++) {
+    result += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
+  }
+  return result;
+}
+
+/**
+ * Génère un code court unique en suivant une progression de longueur (de 2 à 5 caractères).
+ */
+export async function generateShortCode(): Promise<string> {
+  const config = await prisma.systemConfig.findUnique({ where: { id: 1 } });
+  let currentLength = config ? config.slug_generation_length : MIN_LENGTH;
+
+  for (let length = currentLength; length <= MAX_LENGTH; length++) {
+    if (length > currentLength) {
+      await prisma.systemConfig.update({
+        where: { id: 1 },
+        data: { slug_generation_length: length },
+      });
+      currentLength = length; // Mettre à jour la variable locale
+    }
+
+    for (let i = 0; i < MAX_RETRIES_PER_LENGTH; i++) {
+      const slug = generateRandomString(length);
+      const existingLink = await prisma.link.findUnique({ where: { short_code: slug } });
+      if (!existingLink) {
+        return slug;
+      }
+    }
+    console.warn(`[SlugGenerator] Forte densité de collisions pour la longueur ${length}. Passage à la longueur ${length + 1}.`);
+  }
+
+  throw new Error('Impossible de générer un code court unique. Espace de noms potentiellement épuisé.');
+}
