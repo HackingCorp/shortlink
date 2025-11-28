@@ -1,7 +1,19 @@
 'use client';
 import { useState, FormEvent } from 'react';
 import Link from 'next/link';
-import { Copy, Link as LinkIcon, Zap } from 'lucide-react';
+import {
+  Copy,
+  Link as LinkIcon,
+  Zap,
+  BarChart3,
+  Link2,
+  QrCode,
+  Shield,
+  Globe,
+  TrendingUp,
+  RefreshCw,
+  Bell
+} from 'lucide-react';
 
 export default function HomePage() {
   const [longUrl, setLongUrl] = useState('');
@@ -231,55 +243,58 @@ export default function HomePage() {
 
             <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
               {[
-                { 
-                  icon: '📊', 
-                  title: 'Analytiques avancées', 
-                  desc: 'Suivez en temps réel les clics, la géolocalisation et les appareils utilisés pour accéder à vos liens.' 
+                {
+                  icon: BarChart3,
+                  title: 'Analytiques avancées',
+                  desc: 'Suivez en temps réel les clics, la géolocalisation et les appareils utilisés pour accéder à vos liens.'
                 },
-                { 
-                  icon: '🔗', 
-                  title: 'Liens personnalisés', 
-                  desc: 'Créez des liens courts personnalisés avec votre propre nom de marque ou mot-clé.' 
+                {
+                  icon: Link2,
+                  title: 'Liens personnalisés',
+                  desc: 'Créez des liens courts personnalisés avec votre propre nom de marque ou mot-clé.'
                 },
-                { 
-                  icon: '📱', 
-                  title: 'QR Codes', 
-                  desc: 'Générez des codes QR pour vos liens courts et suivez leur utilisation.' 
+                {
+                  icon: QrCode,
+                  title: 'QR Codes',
+                  desc: 'Générez des codes QR pour vos liens courts et suivez leur utilisation.'
                 },
-                { 
-                  icon: '🛡️', 
-                  title: 'Sécurité avancée', 
-                  desc: 'Protégez vos liens par mot de passe ou définissez des dates d\'expiration.' 
+                {
+                  icon: Shield,
+                  title: 'Sécurité avancée',
+                  desc: 'Protégez vos liens par mot de passe ou définissez des dates d\'expiration.'
                 },
-                { 
-                  icon: '🌍', 
-                  title: 'Géociblage', 
-                  desc: 'Redirigez les utilisateurs vers différentes URLs en fonction de leur localisation.' 
+                {
+                  icon: Globe,
+                  title: 'Géociblage',
+                  desc: 'Redirigez les utilisateurs vers différentes URLs en fonction de leur localisation.'
                 },
-                { 
-                  icon: '📈', 
-                  title: 'Rapports détaillés', 
-                  desc: 'Exportez vos statistiques au format CSV ou PDF pour une analyse approfondie.' 
+                {
+                  icon: TrendingUp,
+                  title: 'Rapports détaillés',
+                  desc: 'Exportez vos statistiques au format CSV ou PDF pour une analyse approfondie.'
                 },
-                { 
-                  icon: '🔄', 
-                  title: 'Redirections multiples', 
-                  desc: 'Créez des liens qui redirigent vers différentes URLs en fonction de règles personnalisées.' 
+                {
+                  icon: RefreshCw,
+                  title: 'Redirections multiples',
+                  desc: 'Créez des liens qui redirigent vers différentes URLs en fonction de règles personnalisées.'
                 },
-                { 
-                  icon: '🔔', 
-                  title: 'Notifications', 
-                  desc: 'Recevez des alertes par email lorsque vos liens atteignent certains seuils d\'utilisation.' 
+                {
+                  icon: Bell,
+                  title: 'Notifications',
+                  desc: 'Recevez des alertes par email lorsque vos liens atteignent certains seuils d\'utilisation.'
                 }
-              ].map((feature, index) => (
-                <div key={index} className="group bg-white p-6 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
-                  <div className="w-16 h-16 bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl flex items-center justify-center text-3xl mb-4 mx-auto transition-transform group-hover:scale-110">
-                    {feature.icon}
+              ].map((feature, index) => {
+                const IconComponent = feature.icon;
+                return (
+                  <div key={index} className="group bg-white p-6 rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+                    <div className="w-16 h-16 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-xl flex items-center justify-center mb-4 mx-auto transition-transform group-hover:scale-110">
+                      <IconComponent className="w-8 h-8 text-indigo-600" />
+                    </div>
+                    <h3 className="text-xl font-semibold mb-3 text-center text-gray-800">{feature.title}</h3>
+                    <p className="text-gray-600 text-center text-sm leading-relaxed">{feature.desc}</p>
                   </div>
-                  <h3 className="text-xl font-semibold mb-3 text-center text-gray-800">{feature.title}</h3>
-                  <p className="text-gray-600 text-center text-sm leading-relaxed">{feature.desc}</p>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <div className="mt-16 text-center relative">
