@@ -4,9 +4,6 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { User, PrismaClient, UserRole } from '@prisma/client';
 
-// Types pour l'extension de NextAuth
-import { DefaultSession, DefaultUser } from 'next-auth';
-
 
 
 // ===================================================================
@@ -60,6 +57,50 @@ async function generateShortCode(db: PrismaClient): Promise<string> {
 // FIN DU CODE INTÉGRÉ
 // ===================================================================
 
+/**
+ * Authentifie un utilisateur via session ou clé API.
+ * Retourne l'utilisateur ou null.
+ */
+async function authenticateRequest(req: NextRequest): Promise<{ user: User | null; error?: NextResponse }> {
+  const apiKey = req.headers.get('x-api-key');
+
+  if (apiKey) {
+    try {
+      const apiKeyRecord = await prisma.apiKey.findUnique({
+        where: { key: apiKey },
+        include: { user: true }
+      });
+
+      if (apiKeyRecord?.user) {
+        await prisma.apiKey.update({
+          where: { id: apiKeyRecord.id },
+          data: { lastUsed: new Date() }
+        });
+        return { user: apiKeyRecord.user };
+      } else {
+        return {
+          user: null,
+          error: NextResponse.json({ success: false, error: 'Clé API invalide ou utilisateur non trouvé.' }, { status: 401 })
+        };
+      }
+    } catch (apiError) {
+      return {
+        user: null,
+        error: NextResponse.json({ success: false, error: 'Erreur lors de la vérification de la clé API.' }, { status: 500 })
+      };
+    }
+  }
+
+  const session = await getServerSession(authOptions);
+  const sessionUser = session?.user as { id: string; role?: UserRole } | undefined;
+
+  if (sessionUser?.id) {
+    const user = await prisma.user.findUnique({ where: { id: parseInt(sessionUser.id) } });
+    return { user };
+  }
+
+  return { user: null };
+}
 
 /**
  * Gère la création de liens (anonyme, personnel, ou d'équipe).
@@ -67,49 +108,9 @@ async function generateShortCode(db: PrismaClient): Promise<string> {
  */
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    const sessionUser = session?.user as { id: string; role?: UserRole } | undefined;
-    let user: User | null = null;
-    let apiUser: User | null = null;
-    
-    // Vérifier si la requête provient d'une clé API
-    const apiKey = req.headers.get('x-api-key');
-    
-    if (apiKey) {
-      try {
-        // Récupérer l'utilisateur associé à la clé API
-        const apiKeyRecord = await prisma.apiKey.findUnique({
-          where: { key: apiKey },
-          include: { user: true }
-        });
-        
-        if (apiKeyRecord?.user) {
-          apiUser = apiKeyRecord.user;
-          // Mettre à jour la date de dernière utilisation
-          await prisma.apiKey.update({
-            where: { id: apiKeyRecord.id },
-            data: { lastUsed: new Date() }
-          });
-        } else {
-          return NextResponse.json({ 
-            success: false, 
-            error: 'Clé API invalide ou utilisateur non trouvé.' 
-          }, { status: 401 });
-        }
-      } catch (apiError) {
-        console.error('Error fetching API key:', apiError);
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Erreur lors de la vérification de la clé API.' 
-        }, { status: 500 });
-      }
-    } else if (sessionUser?.id) {
-      user = await prisma.user.findUnique({ 
-        where: { 
-          id: parseInt(sessionUser.id) 
-        } 
-      });
-    }
+    const auth = await authenticateRequest(req);
+    if (auth.error) return auth.error;
+    const currentUser = auth.user;
 
     const body = await req.json();
     const { longUrl, customSlug, title, teamId, expiresAt } = body as {
@@ -157,8 +158,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'URL invalide.' }, { status: 400 });
     }
 
-    // Déterminer l'utilisateur actuel (session ou API)
-    const currentUser = user || apiUser;
     let canCustomize = false;
     let finalTeamId: number | null = null;
     
@@ -220,16 +219,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // CORRECTION : Déterminer l'ID utilisateur pour le lien
-    let userId: number | null = null;
-    
-    if (user) {
-      // Utilisateur connecté via session
-      userId = parseInt(user.id.toString());
-    } else if (apiUser) {
-      // Utilisateur via clé API - s'assurer que l'ID est bien assigné
-      userId = apiUser.id;
-    }
+    // Déterminer l'ID utilisateur pour le lien
+    const userId: number | null = currentUser ? currentUser.id : null;
 
     // Créer le lien
     try {
@@ -301,18 +292,15 @@ export async function POST(req: NextRequest) {
  * Endpoint: GET /api/v1/links?teamId={id}
  */
 export async function GET(req: NextRequest) {
-    const session = await getServerSession(authOptions);
-    const sessionUser = session?.user as { id: string; role?: UserRole } | undefined;
-    
-    if (!sessionUser?.id) {
+    const auth = await authenticateRequest(req);
+    if (auth.error) return auth.error;
+    const user = auth.user;
+
+    if (!user) {
         return NextResponse.json({ success: false, error: 'Authentification requise.' }, { status: 401 });
     }
-    
-    const userId = parseInt(sessionUser.id);
-    const user = await prisma.user.findUnique({ where: { id: userId }});
-    if (!user) {
-        return NextResponse.json({ success: false, error: 'Utilisateur non trouvé.' }, { status: 401 });
-    }
+
+    const userId = user.id;
 
     const { searchParams } = new URL(req.url);
     const teamIdStr = searchParams.get('teamId');
@@ -342,7 +330,7 @@ export async function GET(req: NextRequest) {
  * Gère la suppression d'un lien.
  * Endpoint: DELETE /api/v1/links/{shortCode}
  */
-export async function DELETE(req: NextRequest, { params }: { params: Promise<{ params: string[] }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ params?: string[] }> }) {
     try {
         const { params: routeParams } = await params;
         const shortCode = routeParams?.[0];
@@ -351,20 +339,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
             return NextResponse.json({ success: false, error: "Code court manquant." }, { status: 400 });
         }
 
-        // Vérifier l'authentification
-        const session = await getServerSession(authOptions);
-        const sessionUser = session?.user as { id: string; role?: UserRole } | undefined;
-        
-        if (!sessionUser?.id) {
-            return NextResponse.json({ success: false, error: "Authentification requise." }, { status: 401 });
-        }
-
-        const user = await prisma.user.findUnique({ 
-            where: { id: parseInt(sessionUser.id) } 
-        });
+        // Vérifier l'authentification (session ou clé API)
+        const auth = await authenticateRequest(req);
+        if (auth.error) return auth.error;
+        const user = auth.user;
 
         if (!user) {
-            return NextResponse.json({ success: false, error: "Utilisateur non trouvé." }, { status: 404 });
+            return NextResponse.json({ success: false, error: "Authentification requise." }, { status: 401 });
         }
 
         // Récupérer le lien

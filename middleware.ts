@@ -103,6 +103,10 @@ export default withAuth(
         const isWebhook = webhookPaths.some(path => pathname.startsWith(path));
         if (isWebhook) return true;
 
+        // Les requêtes avec clé API gèrent leur propre auth dans les routes
+        const hasApiKey = req.headers.get('x-api-key');
+        if (hasApiKey && pathname.startsWith('/api/v1/')) return true;
+
         // Vérifier si le chemin est protégé
         const isProtectedPath = protectedPaths.some(path => pathname.startsWith(path));
 
