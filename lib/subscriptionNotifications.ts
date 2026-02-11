@@ -45,8 +45,7 @@ async function getExpiringSubscriptions(daysUntilExpiration: number) {
       planExpiresAt: {
         gte: new Date(targetDate.toISOString().split('T')[0] + 'T00:00:00.000Z'),
         lt: new Date(targetDate.toISOString().split('T')[0] + 'T23:59:59.999Z')
-      },
-      email: { not: null }
+      }
     },
     select: {
       id: true,
@@ -103,8 +102,7 @@ export async function processExpiredSubscriptions() {
   const expiredUsers = await prisma.user.findMany({
     where: {
       role: { in: ['STANDARD', 'PRO', 'ENTERPRISE'] },
-      planExpiresAt: { lt: now },
-      email: { not: null }
+      planExpiresAt: { lt: now }
     },
     select: {
       id: true,
@@ -121,13 +119,8 @@ export async function processExpiredSubscriptions() {
       // Mettre à jour le rôle vers FREE
       await prisma.user.update({
         where: { id: user.id },
-        data: { 
-          role: 'FREE',
-          // Conserver les dates d'expiration pour référence
-          metadata: {
-            previousRole: user.role,
-            previousPlanExpiresAt: user.planExpiresAt
-          }
+        data: {
+          role: 'FREE'
         }
       });
       

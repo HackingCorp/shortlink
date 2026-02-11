@@ -42,7 +42,6 @@ export async function PUT(req: Request) {
         id: true,
         name: true,
         email: true,
-        image: true,
         role: true
       }
     });

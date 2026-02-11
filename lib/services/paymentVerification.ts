@@ -1,7 +1,6 @@
-import { S3PMobileWalletService } from '../s3p/mobileWalletService';
+import { s3pService } from '../s3p/client';
 import { prisma } from '../prisma';
-
-const s3pMobileWallet = new S3PMobileWalletService();
+import { Prisma } from '@prisma/client';
 
 class PaymentVerificationService {
   /**
@@ -20,7 +19,7 @@ class PaymentVerificationService {
           },
           metadata: {
             path: ['s3pPTN'],
-            not: null
+            not: Prisma.JsonNull
           }
         },
         take: 50 // Limiter à 50 vérifications par exécution
@@ -30,18 +29,20 @@ class PaymentVerificationService {
 
       for (const payment of pendingPayments) {
         try {
-          const ptn = payment.metadata?.s3pPTN;
+          const ptn = (payment.metadata as any)?.s3pPTN;
           if (!ptn) continue;
 
           console.log(`Vérification du paiement ${payment.id} avec PTN: ${ptn}`);
-          
-          const status = await s3pMobileWallet.verifyTransaction(ptn);
-          console.log(`Statut pour le paiement ${payment.id}:`, status.status);
 
-          if (status.status === 'SUCCESS') {
-            await this.handleSuccessfulPayment(payment, status);
-          } else if (['FAILED', 'CANCELLED'].includes(status.status)) {
-            await this.handleFailedPayment(payment, status);
+          const result = await s3pService.verifyTransaction(ptn);
+          if (!result.success || !result.data) continue;
+
+          const txStatus = result.data.status;
+
+          if (txStatus === 'SUCCESS') {
+            await this.handleSuccessfulPayment(payment, result.data);
+          } else if (['FAILED', 'CANCELLED'].includes(txStatus)) {
+            await this.handleFailedPayment(payment, result.data);
           }
           // Si le statut est toujours PENDING, on laisse la vérification suivante s'en occuper
           

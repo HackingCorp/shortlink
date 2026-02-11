@@ -35,9 +35,9 @@ export const dynamic = 'force-dynamic';
 
 // Définir la fonction GET avec le middleware
 const GET = withRoleAuthorization(['STANDARD', 'PRO', 'ENTERPRISE'])(
-    async function GET(request: Request, { params }: { params: { shortCode: string } }) {
+    async function GET(request: Request, { params }: { params: Promise<{ shortCode: string }> }) {
         try {
-            const { shortCode } = params;
+            const { shortCode } = await params;
             const user = (request as any).user; // Récupérer l'utilisateur du middleware
             
             // Récupérer les informations de base du lien avec une requête brute

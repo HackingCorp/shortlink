@@ -16,6 +16,21 @@ export async function POST(req: Request) {
 
     const { currentPassword, newPassword } = await req.json();
 
+    // Validation du nouveau mot de passe
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 8) {
+      return new NextResponse(JSON.stringify({
+        success: false,
+        error: 'Le nouveau mot de passe doit contenir au moins 8 caractères'
+      }), { status: 400 });
+    }
+
+    if (!currentPassword) {
+      return new NextResponse(JSON.stringify({
+        success: false,
+        error: 'Le mot de passe actuel est requis'
+      }), { status: 400 });
+    }
+
     // Récupérer l'utilisateur avec son mot de passe hashé
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
@@ -48,8 +63,7 @@ export async function POST(req: Request) {
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        password: hashedPassword,
-        passwordUpdatedAt: new Date()
+        password: hashedPassword
       }
     });
 

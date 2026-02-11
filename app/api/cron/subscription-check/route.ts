@@ -1,6 +1,7 @@
 // app/api/cron/subscription-check/route.ts
 
 import { NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
 import { processExpiredSubscriptions, sendRenewalNotifications } from '@/lib/subscriptionNotifications';
 
 // Cette route sera appelée par un service cron (ex: Vercel Cron, GitHub Actions, etc.)

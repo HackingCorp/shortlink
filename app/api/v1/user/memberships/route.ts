@@ -23,7 +23,7 @@ export async function GET() {
     `;
 
     // Formater la réponse
-    const formattedTeams = memberships.map((member: any) => ({
+    const formattedTeams = (memberships as any[]).map((member: any) => ({
       id: member.teamId,
       name: member.team_name || 'Équipe sans nom',
       role: member.role,

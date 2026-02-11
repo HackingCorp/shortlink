@@ -170,9 +170,9 @@ export async function processExpiredSubscriptions() {
             currency: 'XAF',
             status: 'EXPIRED',
             paymentMethod: 'SYSTEM',
-            paymentReference: `auto_downgrade_${Date.now()}`,
             plan: 'FREE',
-            period: 'NONE',
+            periodStart: now,
+            periodEnd: now,
             metadata: {
               previousRole: user.role,
               reason: 'Abonnement expiré - Rétrogradation automatique',

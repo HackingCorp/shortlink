@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { transactionService } from '@/lib/s3p/transaction.service';
 import { prisma } from '@/lib/prisma';
 import { SUBSCRIPTION_PRICES, BILLING_DISCOUNTS } from '@/lib/s3p/config';
@@ -31,8 +32,39 @@ export async function PUT(req: NextRequest) {
     const signature = req.headers.get('x-enkap-signature');
     const rawBody = await req.text();
 
-    try {
+    // Vérification de la signature Enkap (obligatoire)
+    const enkapSecret = process.env.ENKAP_WEBHOOK_SECRET;
+    if (!enkapSecret) {
+        console.error('[E-nkap Webhook] ENKAP_WEBHOOK_SECRET non configuré - webhook rejeté');
+        return NextResponse.json(
+            { success: false, error: 'Configuration webhook manquante' },
+            { status: 500 }
+        );
+    }
 
+    if (!signature) {
+        console.error('[E-nkap Webhook] Signature manquante');
+        return NextResponse.json(
+            { success: false, error: 'Signature manquante' },
+            { status: 401 }
+        );
+    }
+
+    const expectedSignature = crypto.createHmac('sha256', enkapSecret).update(rawBody).digest('hex');
+    const isValidSignature = crypto.timingSafeEqual(
+        Buffer.from(signature, 'utf8'),
+        Buffer.from(expectedSignature, 'utf8')
+    ).valueOf();
+
+    if (!isValidSignature) {
+        console.error('[E-nkap Webhook] Signature invalide');
+        return NextResponse.json(
+            { success: false, error: 'Signature invalide' },
+            { status: 401 }
+        );
+    }
+
+    try {
         const { searchParams } = new URL(req.url);
         const txid = searchParams.get('txid');
         const body = JSON.parse(rawBody);

@@ -5,23 +5,46 @@ import prisma from '@/lib/prisma';
 
 export async function POST(request: NextRequest) {
   try {
-    const { transactionId, paymentMethod, amount, durationMonths, planId } = await request.json();
-
-    console.log('🔔 Confirmation de renouvellement reçue:', {
-      transactionId,
-      paymentMethod,
-      amount,
-      durationMonths,
-      planId
-    });
-
-    // Récupérer l'utilisateur depuis la session
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Non autorisé' }, { status: 401 });
     }
 
+    const { transactionId, durationMonths, planId } = await request.json();
+
+    if (!transactionId) {
+      return NextResponse.json({ error: 'ID de transaction requis' }, { status: 400 });
+    }
+
     const userId = parseInt(session.user.id, 10);
+
+    // Vérifier que le paiement existe et est confirmé en base de données
+    const payment = await prisma.payment.findFirst({
+      where: {
+        userId: userId,
+        status: 'succeeded',
+        OR: [
+          { paymentId: transactionId },
+          { metadata: { path: ['s3pPTN'], equals: transactionId } },
+          { metadata: { path: ['enkapTransactionId'], equals: transactionId } },
+        ]
+      }
+    });
+
+    if (!payment) {
+      return NextResponse.json(
+        { error: 'Aucun paiement vérifié trouvé pour cette transaction' },
+        { status: 403 }
+      );
+    }
+
+    // Vérifier que ce paiement n'a pas déjà été utilisé
+    if (payment.metadata && typeof payment.metadata === 'object' && 'appliedAt' in payment.metadata) {
+      return NextResponse.json(
+        { error: 'Ce paiement a déjà été appliqué' },
+        { status: 409 }
+      );
+    }
 
     // Récupérer l'utilisateur actuel
     const user = await prisma.user.findUnique({
@@ -30,9 +53,6 @@ export async function POST(request: NextRequest) {
         id: true,
         role: true,
         planExpiresAt: true,
-        planStartedAt: true,
-        name: true,
-        email: true
       }
     });
 
@@ -40,85 +60,56 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Utilisateur non trouvé' }, { status: 404 });
     }
 
-    console.log('👤 Utilisateur trouvé:', {
-      id: user.id,
-      planActuel: user.role,
-      expirationActuelle: user.planExpiresAt
-    });
-
     const now = new Date();
     const currentExpiry = user.planExpiresAt ? new Date(user.planExpiresAt) : now;
-    
     const startDate = currentExpiry > now ? currentExpiry : now;
-    
-    const remainingDays = currentExpiry > now 
-      ? Math.floor((currentExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
-      : 0;
 
-    console.log('📅 Calcul des dates:', {
-      maintenant: now.toISOString(),
-      expirationActuelle: currentExpiry.toISOString(),
-      dateDeDépart: startDate.toISOString(),
-      joursRestants: remainingDays
-    });
-
-    const daysAdded = durationMonths * 30; 
-    const bonusDays = calculateBonusDays(durationMonths);
+    const months = durationMonths || 1;
+    const daysAdded = months * 30;
+    const bonusDays = calculateBonusDays(months);
     const totalDaysAdded = daysAdded + bonusDays;
 
     const newExpiryDate = new Date(startDate);
-    newExpiryDate.setDate(startDate.getDate() + totalDaysAdded); 
+    newExpiryDate.setDate(startDate.getDate() + totalDaysAdded);
+
+    const plan = planId || payment.plan || user.role;
+
+    // Appliquer le renouvellement via transaction atomique
+    const [updatedUser] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          planExpiresAt: newExpiryDate,
+          role: plan,
+          paymentStatus: 'active',
+          updatedAt: new Date()
+        },
+        select: {
+          id: true,
+          role: true,
+          planExpiresAt: true,
+          planStartedAt: true,
+        }
+      }),
+      // Marquer le paiement comme appliqué
+      prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          metadata: {
+            ...(typeof payment.metadata === 'object' ? payment.metadata : {}),
+            appliedAt: new Date().toISOString(),
+          }
+        }
+      })
+    ]);
+
+    const remainingDays = currentExpiry > now
+      ? Math.floor((currentExpiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
 
     const totalEffectiveDays = Math.floor((newExpiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
 
-    console.log('🔄 Mise à jour abonnement CORRIGÉ:', {
-      startDate: startDate.toISOString(),
-      durationMonths,
-      daysAdded,
-      bonusDays,
-      totalDaysAdded,
-      joursRestants: remainingDays,
-      totalEffectiveDays, 
-      newExpiryDate: newExpiryDate.toISOString()
-    });
-
-    // Vérification du calcul
-    if (remainingDays > 0) {
-      const expectedTotalDays = remainingDays + totalDaysAdded;
-      console.log('🔍 VÉRIFICATION CALCUL:', {
-        joursRestants: remainingDays,
-        joursAjoutés: totalDaysAdded,
-        totalAttendu: expectedTotalDays,
-        totalCalculé: totalEffectiveDays,
-        calculCorrect: expectedTotalDays === totalEffectiveDays
-      });
-    }
-
-    // Mettre à jour l'utilisateur
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: {
-        planExpiresAt: newExpiryDate,
-        role: planId || user.role,
-        updatedAt: new Date()
-      },
-      select: {
-        id: true,
-        role: true,
-        planExpiresAt: true,
-        planStartedAt: true,
-        updatedAt: true
-      }
-    });
-
-    console.log('✅ Utilisateur mis à jour:', {
-      userId: updatedUser.id,
-      nouveauRole: updatedUser.role,
-      nouvelleExpiration: updatedUser.planExpiresAt
-    });
-
-    // FORMATTER LA RÉPONSE
-    const responseData = {
+    return NextResponse.json({
       success: true,
       message: 'Renouvellement confirmé avec succès',
       data: {
@@ -126,24 +117,20 @@ export async function POST(request: NextRequest) {
         plan: updatedUser.role,
         oldExpiryDate: user.planExpiresAt?.toISOString() || null,
         newExpiryDate: updatedUser.planExpiresAt?.toISOString() || null,
-        daysAdded: totalDaysAdded, 
+        daysAdded: totalDaysAdded,
         bonusDays,
-        durationMonths,
-        remainingDays, 
-        totalEffectiveDays 
+        durationMonths: months,
+        remainingDays,
+        totalEffectiveDays
       }
-    };
-
-    console.log('📤 Réponse API:', responseData);
-
-    return NextResponse.json(responseData);
+    });
 
   } catch (error) {
-    console.error('❌ Erreur confirmation renouvellement:', error);
-    return NextResponse.json({ 
-      error: 'Erreur interne du serveur',
-      details: error instanceof Error ? error.message : 'Erreur inconnue'
-    }, { status: 500 });
+    console.error('Erreur confirmation renouvellement:', error);
+    return NextResponse.json(
+      { error: 'Erreur interne du serveur' },
+      { status: 500 }
+    );
   }
 }
 

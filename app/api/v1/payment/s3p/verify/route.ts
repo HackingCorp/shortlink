@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { s3pClient } from '@/lib/s3p/auth';
 
 const S3P_ERROR_CODES = {
@@ -27,6 +29,12 @@ const getErrorMessage = (errorCode?: number): string => {
 
 export async function GET(request: NextRequest) {
   try {
+    // Vérifier l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Non autorisé' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const transactionId = searchParams.get('transactionId');
 
@@ -40,13 +48,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    console.log('[S3P Verify] Vérification de la transaction:', transactionId);
-    
     try {
       const result = await s3pClient.verifytxGet('3.0.0', transactionId);
 
-      console.log('[S3P Verify] Réponse S3P brute:', result);
-      
       let paymentStatus;
       
       if (Array.isArray(result) && result.length > 0) {
@@ -56,7 +60,6 @@ export async function GET(request: NextRequest) {
       }
 
       if (!paymentStatus) {
-        console.log('[S3P Verify] Aucun statut trouvé pour la transaction');
         return NextResponse.json({
           success: true,
           transactionId: transactionId,
@@ -64,13 +67,6 @@ export async function GET(request: NextRequest) {
           message: 'Transaction en attente de traitement'
         });
       }
-
-      console.log('[S3P Verify] Statut trouvé:', {
-        ptn: paymentStatus.ptn,
-        status: paymentStatus.status,
-        errorCode: paymentStatus.errorCode,
-        timestamp: paymentStatus.timestamp
-      });
 
       // Déterminer le statut final avec gestion des erreurs
       const finalStatus = getFinalStatus(paymentStatus.status, paymentStatus.errorCode);
@@ -85,8 +81,6 @@ export async function GET(request: NextRequest) {
         ...(paymentStatus.errorCode !== undefined && { errorCode: paymentStatus.errorCode })
       };
 
-      console.log('[S3P Verify] Réponse finale:', responseData);
-
       return NextResponse.json(responseData);
 
     } catch (s3pError: any) {
@@ -97,7 +91,6 @@ export async function GET(request: NextRequest) {
       if (errorMessage.includes('not found') || 
           errorMessage.includes('404') || 
           errorMessage.includes('does not exist')) {
-        console.log('[S3P Verify] Transaction non trouvée (encore en traitement)');
         return NextResponse.json({
           success: true,
           transactionId: transactionId,
@@ -149,6 +142,12 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    // Vérifier l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Non autorisé' }, { status: 401 });
+    }
+
     const body = await request.json();
     const { transactionId, trid } = body;
 
@@ -162,8 +161,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('[S3P Verify] Vérification avec:', { transactionId, trid });
-    
     try {
       let result;
       if (transactionId) {
@@ -172,10 +169,8 @@ export async function POST(request: NextRequest) {
         result = await s3pClient.verifytxGet('3.0.0', undefined, trid);
       }
 
-      console.log('[S3P Verify] Réponse S3P:', result);
-      
       let paymentStatus;
-      
+
       if (Array.isArray(result) && result.length > 0) {
         if (transactionId) {
           paymentStatus = result.find(status => status.ptn === transactionId);

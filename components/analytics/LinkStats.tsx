@@ -179,12 +179,10 @@ export function LinkStats({ shortCode }: LinkStatsProps) {
           </CardHeader>
           <CardContent>
             <div className="h-64">
-              <BarChartComponent 
-                data={stats.countries} 
-                dataKey="clicks" 
-                nameKey="name"
+              <BarChartComponent
+                data={stats.countries}
+                dataKey="clicks"
                 name="Clics"
-                orientation="vertical"
               />
             </div>
           </CardContent>
@@ -198,12 +196,10 @@ export function LinkStats({ shortCode }: LinkStatsProps) {
           </CardHeader>
           <CardContent>
             <div className="h-64">
-              <BarChartComponent 
-                data={stats.browsers} 
-                dataKey="clicks" 
-                nameKey="name"
+              <BarChartComponent
+                data={stats.browsers}
+                dataKey="clicks"
                 name="Clics"
-                orientation="vertical"
               />
             </div>
           </CardContent>
@@ -217,12 +213,10 @@ export function LinkStats({ shortCode }: LinkStatsProps) {
           </CardHeader>
           <CardContent>
             <div className="h-64">
-              <BarChartComponent 
-                data={stats.os} 
-                dataKey="clicks" 
-                nameKey="name"
+              <BarChartComponent
+                data={stats.os}
+                dataKey="clicks"
                 name="Clics"
-                orientation="vertical"
               />
             </div>
           </CardContent>
@@ -236,12 +230,10 @@ export function LinkStats({ shortCode }: LinkStatsProps) {
           </CardHeader>
           <CardContent>
             <div className="h-64">
-              <BarChartComponent 
-                data={stats.referers} 
-                dataKey="clicks" 
-                nameKey="name"
+              <BarChartComponent
+                data={stats.referers}
+                dataKey="clicks"
                 name="Clics"
-                orientation="horizontal"
               />
             </div>
           </CardContent>
@@ -255,12 +247,10 @@ export function LinkStats({ shortCode }: LinkStatsProps) {
           </CardHeader>
           <CardContent>
             <div className="h-64">
-              <BarChartComponent 
-                data={stats.devices} 
-                dataKey="clicks" 
-                nameKey="name"
+              <BarChartComponent
+                data={stats.devices}
+                dataKey="clicks"
                 name="Clics"
-                orientation="vertical"
               />
             </div>
           </CardContent>

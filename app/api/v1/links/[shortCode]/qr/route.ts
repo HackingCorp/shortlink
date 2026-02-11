@@ -4,7 +4,7 @@ import { getAuthSession } from '@/lib/auth';
 
 export async function GET(
   request: Request,
-  { params }: { params: { shortCode: string } }
+  { params }: { params: Promise<{ shortCode: string }> }
 ) {
   try {
     // Vérifier l'authentification
@@ -16,7 +16,7 @@ export async function GET(
       );
     }
 
-    const { shortCode } = params;
+    const { shortCode } = await params;
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
     const url = `${baseUrl}/${shortCode}`;
 

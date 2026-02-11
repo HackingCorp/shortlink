@@ -62,10 +62,6 @@ export async function GET(request: Request) {
             })
         ]);
         
-        console.log('Résultat de l\'agrégation des clics:', totalClicks);
-        
-        
-        
         const clicksTimeline = new Map<string, number>();
         for (let i = 6; i >= 0; i--) {
             const d = new Date();

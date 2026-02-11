@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+// @ts-ignore
 import { toast } from 'react-toastify';
 
 // Types pour les packages de cash-out

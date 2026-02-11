@@ -56,7 +56,7 @@ export async function enrichClick(clickId: number, ip: string, userAgent: string
             mobile: geoData.mobile,
             proxy: geoData.proxy,
             hosting: geoData.hosting,
-            hostname: geoData.hostname,
+            hostname: (geoData as any)?.hostname,
             location: geoData.loc ? {
               latitude: geoData.loc[0],
               longitude: geoData.loc[1]

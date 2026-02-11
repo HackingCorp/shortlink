@@ -7,12 +7,12 @@ import { UserRole } from '@prisma/client';
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    
+
     if (!session?.user?.id) {
       return NextResponse.json({ error: 'Non authentifié' }, { status: 401 });
     }
 
-    const { plan, status, upgradedAt, transactionId, provider, durationMonths } = await request.json();
+    const { plan, transactionId, provider } = await request.json();
 
     // Validation du plan
     const validPlans: UserRole[] = ['STANDARD', 'PRO', 'ENTERPRISE'];
@@ -20,61 +20,83 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Plan invalide' }, { status: 400 });
     }
 
-    // Récupérer la date d'expiration actuelle
-    const currentUser = await prisma.user.findUnique({
-      where: { id: parseInt(session.user.id) },
-      select: {
-        planExpiresAt: true
+    if (!transactionId) {
+      return NextResponse.json({ error: 'ID de transaction requis' }, { status: 400 });
+    }
+
+    const userId = parseInt(session.user.id);
+
+    // Vérifier que le paiement existe et est confirmé en base de données
+    const payment = await prisma.payment.findFirst({
+      where: {
+        userId: userId,
+        status: 'succeeded',
+        plan: plan,
+        OR: [
+          { paymentId: transactionId },
+          { metadata: { path: ['s3pPTN'], equals: transactionId } },
+          { metadata: { path: ['enkapTransactionId'], equals: transactionId } },
+        ]
       }
     });
 
-    const oldExpiryDate = currentUser?.planExpiresAt;
+    if (!payment) {
+      return NextResponse.json(
+        { error: 'Aucun paiement vérifié trouvé pour cette transaction' },
+        { status: 403 }
+      );
+    }
 
-    // Calcul de la nouvelle date d'expiration
-    const planExpiresAt = new Date();
-    planExpiresAt.setMonth(planExpiresAt.getMonth() + (durationMonths || 1));
+    // Vérifier que ce paiement n'a pas déjà été utilisé
+    if (payment.metadata && typeof payment.metadata === 'object' && 'appliedAt' in payment.metadata) {
+      return NextResponse.json(
+        { error: 'Ce paiement a déjà été appliqué' },
+        { status: 409 }
+      );
+    }
 
-    // Mettre à jour l'utilisateur
-    const updatedUser = await prisma.user.update({
-      where: { id: parseInt(session.user.id) },
-      data: {
-        role: plan as UserRole,
-        planStartedAt: upgradedAt ? new Date(upgradedAt) : new Date(),
-        planExpiresAt: planExpiresAt,
-        ...(transactionId && { subscriptionId: transactionId }),
-        ...(provider && { paymentMethod: provider }),
-        updatedAt: new Date()
-      },
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        planStartedAt: true,
-        planExpiresAt: true,
-        paymentStatus: true
-      }
-    });
+    // Appliquer l'upgrade via transaction atomique
+    const [updatedUser] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: {
+          role: plan as UserRole,
+          planStartedAt: payment.periodStart || new Date(),
+          planExpiresAt: payment.periodEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          paymentStatus: 'active',
+          ...(provider && { paymentMethod: provider }),
+          ...(transactionId && { subscriptionId: transactionId }),
+          updatedAt: new Date()
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          role: true,
+          planStartedAt: true,
+          planExpiresAt: true,
+        }
+      }),
+      // Marquer le paiement comme appliqué
+      prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          metadata: {
+            ...(typeof payment.metadata === 'object' ? payment.metadata : {}),
+            appliedAt: new Date().toISOString(),
+          }
+        }
+      })
+    ]);
 
-    console.log('✅ Plan utilisateur mis à jour:', {
+    return NextResponse.json({
+      success: true,
       user: updatedUser,
-      transactionId,
-      provider,
-      oldExpiryDate,
-      newExpiryDate: planExpiresAt
-    });
-
-    return NextResponse.json({ 
-      success: true, 
-      user: updatedUser,
-      oldExpiryDate: oldExpiryDate?.toISOString(),
-      newExpiryDate: planExpiresAt.toISOString(),
-      daysAdded: durationMonths ? durationMonths * 30 : 30, // Approximation de 30 jours par mois
-      message: `Plan ${plan} activé avec succès` 
+      message: `Plan ${plan} activé avec succès`
     });
 
   } catch (error) {
-    console.error('❌ Erreur mise à jour plan:', error);
+    console.error('Erreur mise à jour plan:', error);
     return NextResponse.json(
       { error: 'Erreur lors de la mise à jour du plan' },
       { status: 500 }

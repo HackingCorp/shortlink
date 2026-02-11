@@ -1,13 +1,17 @@
 #!/bin/bash
 
-# Configuration du serveur
-SERVER_IP="94.250.201.167"
-SERVER_USER="root"
-SERVER_PASSWORD="Lontsi05@"
+# Configuration du serveur - utiliser des variables d'environnement
+SERVER_IP="${DEPLOY_SERVER_IP:?'DEPLOY_SERVER_IP not set'}"
+SERVER_USER="${DEPLOY_SERVER_USER:-root}"
 REMOTE_PATH="/opt/apps/Kut"
 PROJECT_NAME="kut.es"
 DOMAIN="kut.es"
 PORT="3200"
+
+# Authentification via clé SSH recommandée, sinon utiliser sshpass
+if [ -z "$SSH_AUTH_SOCK" ] && [ -z "$DEPLOY_SSH_KEY" ]; then
+  echo "ATTENTION: Configurez une clé SSH ou définissez DEPLOY_SSH_KEY pour le déploiement sécurisé"
+fi
 
 # Couleurs pour les logs
 RED='\033[0;31m'

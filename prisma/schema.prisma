@@ -193,6 +193,10 @@ model Link {
   clicks      Click[]
   team        Team?     @relation(fields: [team_id], references: [id], onDelete: Cascade)
   user        User?     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([team_id])
+  @@index([created_at])
 }
 
 model Click {
@@ -212,6 +216,12 @@ model Click {
   user_id     Int?
   link        Link     @relation(fields: [link_id], references: [id], onDelete: Cascade)
   user        User?    @relation(fields: [user_id], references: [id])
+
+  @@index([link_id])
+  @@index([clicked_at])
+  @@index([user_id])
+  @@index([country])
+  @@index([link_id, clicked_at])
 }
 
 model ApiKey {
@@ -270,13 +280,6 @@ enum TransactionStatus {
   CANCELLED
 }
 
-enum ReferentialAction {
-  NoAction
-  Cascade
-  Restrict
-  SetNull
-  SetDefault
-}
 
 enum TeamRole {
   OWNER

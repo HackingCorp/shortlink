@@ -24,15 +24,15 @@ export async function GET() {
         links: {
           select: {
             id: true,
-            shortCode: true,
-            originalUrl: true,
+            short_code: true,
+            long_url: true,
             clicks: {
               select: {
                 id: true,
-                createdAt: true
+                clicked_at: true
               },
               orderBy: {
-                createdAt: 'desc'
+                clicked_at: 'desc'
               },
               take: 1
             },
@@ -41,7 +41,7 @@ export async function GET() {
             }
           },
           orderBy: {
-            createdAt: 'desc'
+            created_at: 'desc'
           },
           take: 5
         },
@@ -67,7 +67,7 @@ export async function GET() {
         id: number;
         shortCode: string;
         originalUrl: string;
-        clicks: Array<{ id: number; createdAt: Date }>;
+        clicks: Array<{ id: number; clicked_at: Date }>;
         _count: { clicks: number };
       }>;
       _count: {
@@ -85,14 +85,14 @@ export async function GET() {
       totalClicks: typedUser.links?.reduce((sum, link) => sum + (link._count?.clicks || 0), 0) || 0,
       totalApiKeys: typedUser._count?.apiKeys || 0,
       lastClicks: typedUser.links?.map(link => ({
-        shortCode: link.shortCode,
-        lastClick: link.clicks[0]?.createdAt || null,
+        shortCode: link.short_code,
+        lastClick: link.clicks[0]?.clicked_at || null,
         totalClicks: link._count?.clicks || 0
       })) || []
     };
 
-    // Supprimer les champs _count et links de l'objet utilisateur
-    const { _count, links, ...userData } = typedUser;
+    // Supprimer les champs sensibles de l'objet utilisateur
+    const { _count, links, password, ...userData } = typedUser as any;
 
     return NextResponse.json({
       success: true,

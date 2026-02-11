@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { s3pService } from '@/lib/s3p/client';
 import { z } from 'zod';
 
@@ -46,7 +48,6 @@ const RequestBodySchema = z.discriminatedUnion('step', [
 // Gestionnaire pour getPackages
 async function handleGetPackages(data: z.infer<typeof GetPackagesSchema>) {
   try {
-    console.log('[API Cashout] Récupération des packages...');
     const result = await s3pService.getCashoutPackages(data.serviceId);
     
     if (!result.success) {
@@ -61,7 +62,6 @@ async function handleGetPackages(data: z.infer<typeof GetPackagesSchema>) {
       );
     }
     
-    console.log('[API Cashout] Packages récupérés avec succès');
     return NextResponse.json({ 
       success: true,
       data: result.data 
@@ -81,8 +81,6 @@ async function handleGetPackages(data: z.infer<typeof GetPackagesSchema>) {
 
 async function handleCreateQuote(data: z.infer<typeof CreateQuoteSchema>) {
   try {
-    console.log('[API Cashout] Création du devis avec les données:', data);
-    
     const result = await s3pService.createQuote({
       serviceId: data.serviceId, 
       amount: data.amount,
@@ -104,7 +102,6 @@ async function handleCreateQuote(data: z.infer<typeof CreateQuoteSchema>) {
       );
     }
 
-    console.log('[API Cashout] Devis créé avec succès:', result.data);
     return NextResponse.json({ 
       success: true,
       data: {
@@ -129,24 +126,12 @@ async function handleCreateQuote(data: z.infer<typeof CreateQuoteSchema>) {
 
 async function handleCollectPayment(data: z.infer<typeof CollectSchema>) {
   try {
-    console.log('[API Cashout] Traitement de la collecte de paiement...');
-    
     if (!data.customer.email) {
       return NextResponse.json(
         { success: false, error: 'Customer email is required' },
         { status: 400 }
       );
     }
-
-    console.log('[API Cashout] Collect payment params:', {
-      quoteId: data.quoteId,
-      transactionId: data.transactionId,
-      serviceNumber: data.serviceNumber,
-      amount: data.amount,
-      currency: data.currency,
-      serviceId: data.serviceId,
-      customer: data.customer
-    });
 
     const collectParams = {
       quoteId: data.quoteId,
@@ -194,11 +179,17 @@ async function handleCollectPayment(data: z.infer<typeof CollectSchema>) {
 }
 
 export async function POST(req: Request) {
-  console.log('[API Cashout] Nouvelle requête reçue');
-  
   try {
+    // Vérifier l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { success: false, error: 'Non autorisé' },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
-    console.log('[API Cashout] Corps de la requête:', JSON.stringify(body, null, 2));
     
     const parsed = RequestBodySchema.safeParse(body);
     if (!parsed.success) {

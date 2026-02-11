@@ -4,13 +4,10 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import prisma from '@/lib/prisma';
 
 export async function POST(request: Request) {
-  console.log('Début de la requête de mise à jour de plan');
   try {
     const session = await getServerSession(authOptions);
-    console.log('Session récupérée:', { userId: session?.user?.id, role: session?.user?.role });
-    
+
     if (!session?.user?.id) {
-      console.error('Erreur: Aucun utilisateur connecté');
       return NextResponse.json(
         { success: false, error: 'Non autorisé' },
         { status: 401 }
@@ -18,12 +15,9 @@ export async function POST(request: Request) {
     }
 
     const data = await request.json();
-    console.log('Données reçues:', data);
-    const { plan } = data;
-    const validPlans = ['FREE', 'STANDARD', 'PRO', 'ENTERPRISE'] as const;
+    const { plan, transactionId } = data;
+    const validPlans = ['STANDARD', 'PRO', 'ENTERPRISE'] as const;
     type ValidPlan = typeof validPlans[number];
-    
-    console.log('Plan demandé:', plan);
 
     if (!validPlans.includes(plan as ValidPlan)) {
       return NextResponse.json(
@@ -32,55 +26,77 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log('Tentative de mise à jour du plan pour l\'utilisateur:', session.user.id);
-    
-    // Mettre à jour le rôle de l'utilisateur dans la base de données
-    const updateData = {
-      role: plan,
-      ...(plan !== 'FREE' && { 
-        planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 jours
-      })
-    };
-    console.log('Données de mise à jour:', updateData);
-    
-    const updatedUser = await prisma.user.update({
-      where: { id: parseInt(session.user.id) },
-      data: { 
-        role: plan,
-        // Mettre à jour la date d'expiration pour les abonnements payants
-        ...(plan !== 'FREE' && { 
-          planExpiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 jours
-        })
-      },
-      select: {
-        id: true,
-        email: true,
-        username: true,
-        role: true
+    if (!transactionId) {
+      return NextResponse.json(
+        { success: false, error: 'ID de transaction requis' },
+        { status: 400 }
+      );
+    }
+
+    // Vérifier que le paiement existe et est confirmé en base de données
+    const payment = await prisma.payment.findFirst({
+      where: {
+        paymentId: transactionId,
+        userId: parseInt(session.user.id),
+        status: 'succeeded',
+        plan: plan,
       }
     });
 
-    const responseData = {
+    if (!payment) {
+      return NextResponse.json(
+        { success: false, error: 'Aucun paiement vérifié trouvé pour cette transaction' },
+        { status: 403 }
+      );
+    }
+
+    // Vérifier que ce paiement n'a pas déjà été utilisé pour un upgrade
+    if (payment.metadata && typeof payment.metadata === 'object' && 'appliedAt' in payment.metadata) {
+      return NextResponse.json(
+        { success: false, error: 'Ce paiement a déjà été appliqué' },
+        { status: 409 }
+      );
+    }
+
+    // Appliquer l'upgrade avec les dates du paiement
+    const updatedUser = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: parseInt(session.user.id) },
+        data: {
+          role: plan,
+          planStartedAt: payment.periodStart || new Date(),
+          planExpiresAt: payment.periodEnd || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          paymentStatus: 'active',
+        },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          role: true,
+          planExpiresAt: true,
+        }
+      }),
+      // Marquer le paiement comme appliqué
+      prisma.payment.update({
+        where: { id: payment.id },
+        data: {
+          metadata: {
+            ...(typeof payment.metadata === 'object' ? payment.metadata : {}),
+            appliedAt: new Date().toISOString(),
+          }
+        }
+      })
+    ]);
+
+    return NextResponse.json({
       success: true,
-      data: {
-        id: updatedUser.id,
-        email: updatedUser.email,
-        username: updatedUser.username,
-        role: updatedUser.role
-      }
-    };
-    
-    console.log('Mise à jour réussie:', responseData);
-    return NextResponse.json(responseData);
-      
+      data: updatedUser[0]
+    });
+
   } catch (error) {
     console.error('Erreur lors de la mise à jour du plan:', error);
     return NextResponse.json(
-      { 
-        success: false, 
-        error: 'Erreur lors de la mise à jour du plan',
-        details: error instanceof Error ? error.message : 'Erreur inconnue'
-      },
+      { success: false, error: 'Erreur lors de la mise à jour du plan' },
       { status: 500 }
     );
   }

@@ -1,15 +1,14 @@
-import { NextApiResponse } from 'next';
+import { NextRequest, NextResponse } from 'next/server';
 import { withRoleAuthorization, AuthenticatedRequest } from '@/lib/authMiddleware';
 import prisma from '@/lib/prisma';
 
-async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') return res.status(405).end();
-  const { token } = req.body;
+async function handler(req: AuthenticatedRequest) {
+  const { token } = await req.json();
   const user = req.user;
-  if (!token) return res.status(400).json({ error: 'Token manquant.' });
+  if (!token) return NextResponse.json({ error: 'Token manquant.' }, { status: 400 });
   const invitation = await prisma.teamInvitation.findUnique({ where: { token } });
   if (!invitation || invitation.expiresAt < new Date() || invitation.email !== user.email) {
-    return res.status(404).json({ error: 'Invitation invalide, expirée ou non destinée à cet utilisateur.' });
+    return NextResponse.json({ error: 'Invitation invalide, expirée ou non destinée à cet utilisateur.' }, { status: 404 });
   }
   try {
     await prisma.$transaction(async (tx) => {
@@ -17,14 +16,14 @@ async function handler(req: AuthenticatedRequest, res: NextApiResponse) {
         data: { teamId: invitation.teamId, userId: user.id, role: invitation.role },
       });
       await tx.user.update({
-        where: { id: user.id }, data: { teamId: invitation.teamId },
+        where: { id: user.id }, data: { teams: { connect: { id: invitation.teamId } } },
       });
       await tx.teamInvitation.delete({ where: { id: invitation.id } });
     });
-    res.status(200).json({ success: true, message: 'Vous avez rejoint l\'équipe avec succès !' });
+    return NextResponse.json({ success: true, message: 'Vous avez rejoint l\'équipe avec succès !' });
   } catch (error) {
-    res.status(409).json({ error: 'Vous êtes probablement déjà membre de cette équipe.' });
+    return NextResponse.json({ error: 'Vous êtes probablement déjà membre de cette équipe.' }, { status: 409 });
   }
 }
 
-export default withRoleAuthorization(['FREE', 'STANDARD', 'PRO', 'ENTERPRISE'])(handler);
+export const POST = withRoleAuthorization(['FREE', 'STANDARD', 'PRO', 'ENTERPRISE'])(handler);

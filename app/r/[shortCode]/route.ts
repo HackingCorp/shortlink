@@ -14,9 +14,9 @@ function normalizeUrl(url: string): string {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { shortCode: string } }
+  { params }: { params: Promise<{ shortCode: string }> }
 ) {
-  const { shortCode } = params;
+  const { shortCode } = await params;
 
   try {
     const link = await prisma.link.findUnique({

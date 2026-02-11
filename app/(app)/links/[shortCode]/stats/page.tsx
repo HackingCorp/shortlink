@@ -7,9 +7,9 @@ import prisma from "@/lib/prisma";
 export default async function LinkStatsPage({
   params,
 }: {
-  params: { shortCode: string };
+  params: Promise<{ shortCode: string }>;
 }) {
-  const { shortCode } = params;
+  const { shortCode } = await params;
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.email) {
@@ -39,8 +39,8 @@ export default async function LinkStatsPage({
   if (!isOwner && link.team_id) {
     const teamMember = await prisma.teamMember.findFirst({
       where: {
-        user_id: user.id,
-        team_id: link.team_id,
+        userId: user.id,
+        teamId: link.team_id,
         role: { in: ["OWNER", "ADMIN", "MEMBER"] },
       },
     });

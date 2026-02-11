@@ -75,21 +75,13 @@ export async function POST(req: NextRequest) {
     // Vérifier si la requête provient d'une clé API
     const apiKey = req.headers.get('x-api-key');
     
-    console.log('=== DEBUG API ===');
-    console.log('API Key from header:', apiKey ? 'Present' : 'Not found');
-    console.log('Session User:', sessionUser ? 'Present' : 'Not found');
-    
     if (apiKey) {
-      console.log('Searching for API key in database...');
       try {
         // Récupérer l'utilisateur associé à la clé API
         const apiKeyRecord = await prisma.apiKey.findUnique({
           where: { key: apiKey },
           include: { user: true }
         });
-        
-        console.log('API Key Record found:', !!apiKeyRecord);
-        console.log('User associated with API key:', apiKeyRecord?.user ? `ID: ${apiKeyRecord.user.id}` : 'None');
         
         if (apiKeyRecord?.user) {
           apiUser = apiKeyRecord.user;
@@ -99,7 +91,6 @@ export async function POST(req: NextRequest) {
             data: { lastUsed: new Date() }
           });
         } else {
-          console.log('API key not found or no user associated');
           return NextResponse.json({ 
             success: false, 
             error: 'Clé API invalide ou utilisateur non trouvé.' 
@@ -133,12 +124,43 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'URL longue requise.' }, { status: 400 });
     }
 
+    // Validation de l'URL
+    try {
+      const urlToValidate = longUrl.startsWith('http://') || longUrl.startsWith('https://')
+        ? longUrl
+        : `https://${longUrl}`;
+      const parsedUrl = new URL(urlToValidate);
+
+      // N'autoriser que http et https
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+        return NextResponse.json({ success: false, error: 'Seuls les protocoles HTTP et HTTPS sont autorisés.' }, { status: 400 });
+      }
+
+      // Bloquer les IPs privées/internes (protection SSRF)
+      const hostname = parsedUrl.hostname;
+      const blockedPatterns = [
+        /^localhost$/i,
+        /^127\./,
+        /^10\./,
+        /^172\.(1[6-9]|2\d|3[01])\./,
+        /^192\.168\./,
+        /^169\.254\./,
+        /^0\./,
+        /^\[::1\]$/,
+        /^\[fc/i,
+        /^\[fd/i,
+      ];
+      if (blockedPatterns.some(pattern => pattern.test(hostname))) {
+        return NextResponse.json({ success: false, error: 'Les URLs pointant vers des adresses internes ne sont pas autorisées.' }, { status: 400 });
+      }
+    } catch {
+      return NextResponse.json({ success: false, error: 'URL invalide.' }, { status: 400 });
+    }
+
     // Déterminer l'utilisateur actuel (session ou API)
     const currentUser = user || apiUser;
     let canCustomize = false;
     let finalTeamId: number | null = null;
-    
-    console.log('Current user:', currentUser ? `ID: ${currentUser.id}, Role: ${currentUser.role}` : 'None');
     
     // Vérifier les permissions de personnalisation
     if (currentUser) {
@@ -207,14 +229,8 @@ export async function POST(req: NextRequest) {
     } else if (apiUser) {
       // Utilisateur via clé API - s'assurer que l'ID est bien assigné
       userId = apiUser.id;
-      console.log('Using API user ID:', userId);
     }
-    
-    console.log('Final userId for link:', userId);
-    console.log('Final teamId for link:', finalTeamId);
-    console.log('Custom slug:', customSlug);
-    console.log('Can customize:', canCustomize);
-    
+
     // Créer le lien
     try {
       const linkData: any = {
@@ -234,22 +250,12 @@ export async function POST(req: NextRequest) {
         linkData.team_id = finalTeamId;
       }
 
-      console.log('Link data to create:', linkData);
-
       const link = await prisma.link.create({
         data: linkData,
         include: {
           user: true,
           team: true
         }
-      });
-
-      console.log('Link created:', {
-        id: link.id,
-        shortCode: link.short_code,
-        userId: link.user_id,
-        teamId: link.team_id,
-        userFromDB: link.user?.id || 'No user linked'
       });
 
       // Utiliser la configuration centralisée pour l'URL courte
@@ -336,9 +342,9 @@ export async function GET(req: NextRequest) {
  * Gère la suppression d'un lien.
  * Endpoint: DELETE /api/v1/links/{shortCode}
  */
-export async function DELETE(req: NextRequest, { params }: { params: { params: string[] } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ params: string[] }> }) {
     try {
-        const { params: routeParams } = params;
+        const { params: routeParams } = await params;
         const shortCode = routeParams?.[0];
 
         if (!shortCode) {

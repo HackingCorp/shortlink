@@ -3,9 +3,8 @@
 # Script de configuration initiale du serveur pour kut.es
 # À exécuter avant le premier déploiement
 
-SERVER_IP="94.250.201.167"
-SERVER_USER="root"
-SERVER_PASSWORD="Lontsi05@"
+SERVER_IP="${DEPLOY_SERVER_IP:?'DEPLOY_SERVER_IP not set'}"
+SERVER_USER="${DEPLOY_SERVER_USER:-root}"
 DOMAIN="kut.es"
 
 # Couleurs

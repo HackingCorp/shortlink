@@ -142,8 +142,8 @@ export async function POST(request: Request) {
     console.error("Erreur d'inscription ou d'envoi d'email:", error);
     
     // Message d'erreur spécifique pour les problèmes d'email
-    if (error.message?.includes("Impossible d'envoyer l'email") || 
-        error.message?.includes("Erreur de connexion au serveur email")) {
+    if (error instanceof Error && (error.message?.includes("Impossible d'envoyer l'email") ||
+        error.message?.includes("Erreur de connexion au serveur email"))) {
       return NextResponse.json(
         { success: false, error: 'Erreur lors de l\'envoi de l\'email de vérification. Veuillez réessayer dans quelques minutes.' },
         { status: 500 }

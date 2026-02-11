@@ -51,16 +51,18 @@ export async function sendMail({ to, subject, html }: MailOptions) {
     console.error("Erreur lors de l'envoi de l'email via Nodemailer:", error);
     
     // Messages d'erreur plus spécifiques
-    if (error.code === 'ESOCKET') {
-      console.error('Erreur de socket - problème de certificat SSL/TLS');
-      throw new Error("Erreur de connexion au serveur email. Vérifiez la configuration SSL.");
-    } else if (error.code === 'EAUTH') {
-      throw new Error("Erreur d'authentification email. Vérifiez vos identifiants.");
-    } else if (error.code === 'ETIMEDOUT') {
-      throw new Error("Timeout de connexion email. Le serveur met trop de temps à répondre.");
-    } else {
-      throw new Error("Impossible d'envoyer l'email.");
+    if (error instanceof Error && 'code' in error) {
+      const errWithCode = error as Error & { code?: string };
+      if (errWithCode.code === 'ESOCKET') {
+        console.error('Erreur de socket - problème de certificat SSL/TLS');
+        throw new Error("Erreur de connexion au serveur email. Vérifiez la configuration SSL.");
+      } else if (errWithCode.code === 'EAUTH') {
+        throw new Error("Erreur d'authentification email. Vérifiez vos identifiants.");
+      } else if (errWithCode.code === 'ETIMEDOUT') {
+        throw new Error("Timeout de connexion email. Le serveur met trop de temps à répondre.");
+      }
     }
+    throw new Error("Impossible d'envoyer l'email.");
   }
 }
 

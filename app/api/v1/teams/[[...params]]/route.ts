@@ -1,177 +1,353 @@
-import { NextApiResponse } from 'next';
-import { withRoleAuthorization, AuthenticatedRequest } from '@/lib/authMiddleware';
+import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import prisma from '@/lib/prisma';
 import { randomBytes } from 'crypto';
 import { sendTeamInvitationEmail } from '@/lib/email';
-import { NextRequest, NextResponse } from 'next/server';
+import { User } from '@prisma/client';
 
-interface Params {
-  params: {
-    params?: string[];
-  };
-}
-  // Après
-  async function handler(req: AuthenticatedRequest): Promise<NextResponse> {
-    const [teamIdStr, action, resourceIdStr] = req.nextUrl?.pathname.split('/').filter(Boolean).slice(3) || [];
-    
+// --- Helper: authenticate and authorize the user (ENTERPRISE or ADMIN roles) ---
 
-  
-  // Routes qui nécessitent un ID d'équipe (ex: /api/v1/teams/123/...)
-  if (teamIdStr) {
-    const teamId = parseInt(teamIdStr);
-    if (isNaN(teamId)) return res.status(400).json({ success: false, error: 'ID d\'équipe invalide.' });
+async function authorizeUser(): Promise<{ user: User } | NextResponse> {
+  const session = await getServerSession(authOptions);
 
-    switch (req.method) {
-      case 'GET':
-        // Route: GET /api/v1/teams/{id}/members -> Lister les membres
-        if (action === 'members') return listMembers(req, res, teamId);
-        // Route: GET /api/v1/teams/{id}/invitations -> Lister les invitations
-        if (action === 'invitations') return listInvitations(req, res, teamId);
-        break;7
-
-      case 'POST':
-        // Route: POST /api/v1/teams/{id}/invitations -> Créer une invitation
-        if (action === 'invitations') return createInvitation(req, res, teamId);
-        break;
-
-      case 'DELETE':
-        // Route: DELETE /api/v1/teams/{id}/members/{memberId} -> Supprimer un membre
-        if (action === 'members' && resourceIdStr) return removeMember(req, res, teamId, parseInt(resourceIdStr));
-        // Route: DELETE /api/v1/teams/{id}/invitations/{invitationId} -> Annuler une invitation
-        if (action === 'invitations' && resourceIdStr) return cancelInvitation(req, res, teamId, parseInt(resourceIdStr));
-        break;
-    }
+  if (!session?.user?.email) {
+    return NextResponse.json(
+      { success: false, error: 'Authentification requise.' },
+      { status: 401 }
+    );
   }
 
-  // Si aucune route ne correspond
-  return res.status(404).json({ success: false, error: 'Route non trouvée.' });
+  const user = await prisma.user.findUnique({
+    where: { email: session.user.email },
+  });
+
+  if (!user) {
+    return NextResponse.json(
+      { success: false, error: 'Utilisateur non trouvé.' },
+      { status: 401 }
+    );
+  }
+
+  if (!['ENTERPRISE', 'ADMIN'].includes(user.role)) {
+    return NextResponse.json(
+      { success: false, error: 'Accès non autorisé. Permissions insuffisantes.' },
+      { status: 403 }
+    );
+  }
+
+  return { user };
 }
 
-// Protège toutes les routes de ce fichier : seuls les utilisateurs avec les rôles 'ENTERPRISE' ou 'ADMIN' peuvent y accéder.
-export default withRoleAuthorization(['ENTERPRISE', 'ADMIN'])(handler);
+// --- Helper: parse the catch-all params from the URL ---
+
+function parseParams(params?: string[]): {
+  teamIdStr?: string;
+  action?: string;
+  resourceIdStr?: string;
+} {
+  const [teamIdStr, action, resourceIdStr] = params || [];
+  return { teamIdStr, action, resourceIdStr };
+}
+
+// --- Route Handlers ---
+
+/**
+ * GET /api/v1/teams/{id}/members    -> List team members
+ * GET /api/v1/teams/{id}/invitations -> List pending invitations
+ */
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ params?: string[] }> }
+) {
+  const auth = await authorizeUser();
+  if (auth instanceof NextResponse) return auth;
+  const { user } = auth;
+
+  const resolvedParams = await params;
+  const { teamIdStr, action } = parseParams(resolvedParams.params);
+
+  if (!teamIdStr) {
+    return NextResponse.json(
+      { success: false, error: 'Route non trouvée.' },
+      { status: 404 }
+    );
+  }
+
+  const teamId = parseInt(teamIdStr);
+  if (isNaN(teamId)) {
+    return NextResponse.json(
+      { success: false, error: "ID d'équipe invalide." },
+      { status: 400 }
+    );
+  }
+
+  if (action === 'members') {
+    return listMembers(teamId);
+  }
+
+  if (action === 'invitations') {
+    return listInvitations(teamId);
+  }
+
+  return NextResponse.json(
+    { success: false, error: 'Route non trouvée.' },
+    { status: 404 }
+  );
+}
+
+/**
+ * POST /api/v1/teams                   -> Create a new team
+ * POST /api/v1/teams/{id}/invitations  -> Create an invitation
+ */
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ params?: string[] }> }
+) {
+  const auth = await authorizeUser();
+  if (auth instanceof NextResponse) return auth;
+  const { user } = auth;
+
+  const resolvedParams = await params;
+  const { teamIdStr, action } = parseParams(resolvedParams.params);
+
+  // POST /api/v1/teams -> Create team (no sub-params)
+  if (!teamIdStr) {
+    return createTeam(request, user);
+  }
+
+  const teamId = parseInt(teamIdStr);
+  if (isNaN(teamId)) {
+    return NextResponse.json(
+      { success: false, error: "ID d'équipe invalide." },
+      { status: 400 }
+    );
+  }
+
+  // POST /api/v1/teams/{id}/invitations -> Create invitation
+  if (action === 'invitations') {
+    return createInvitation(request, user, teamId);
+  }
+
+  return NextResponse.json(
+    { success: false, error: 'Route non trouvée.' },
+    { status: 404 }
+  );
+}
+
+/**
+ * DELETE /api/v1/teams/{id}/members/{memberId}          -> Remove a member
+ * DELETE /api/v1/teams/{id}/invitations/{invitationId}  -> Cancel an invitation
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ params?: string[] }> }
+) {
+  const auth = await authorizeUser();
+  if (auth instanceof NextResponse) return auth;
+  const { user } = auth;
+
+  const resolvedParams = await params;
+  const { teamIdStr, action, resourceIdStr } = parseParams(resolvedParams.params);
+
+  if (!teamIdStr) {
+    return NextResponse.json(
+      { success: false, error: 'Route non trouvée.' },
+      { status: 404 }
+    );
+  }
+
+  const teamId = parseInt(teamIdStr);
+  if (isNaN(teamId)) {
+    return NextResponse.json(
+      { success: false, error: "ID d'équipe invalide." },
+      { status: 400 }
+    );
+  }
+
+  if (action === 'members' && resourceIdStr) {
+    return removeMember(user, teamId, parseInt(resourceIdStr));
+  }
+
+  if (action === 'invitations' && resourceIdStr) {
+    return cancelInvitation(user, teamId, parseInt(resourceIdStr));
+  }
+
+  return NextResponse.json(
+    { success: false, error: 'Route non trouvée.' },
+    { status: 404 }
+  );
+}
 
 
-// --- Fonctions de Logique Métier ---
+// --- Business Logic Functions ---
 
 /**
  * Crée une nouvelle équipe. L'utilisateur qui la crée en devient automatiquement le propriétaire.
  */
-async function createTeam(req: AuthenticatedRequest, res: NextApiResponse) {
-  const { name } = req.body;
-  const ownerId = req.user.id;
-  if (!name) return res.status(400).json({ success: false, error: 'Le nom de l\'équipe est requis.' });
+async function createTeam(req: NextRequest, user: User): Promise<NextResponse> {
+  const body = await req.json();
+  const { name } = body;
+  const ownerId = user.id;
+
+  if (!name) {
+    return NextResponse.json(
+      { success: false, error: "Le nom de l'équipe est requis." },
+      { status: 400 }
+    );
+  }
+
   const existingTeam = await prisma.team.findFirst({ where: { ownerId } });
-  if (existingTeam) return res.status(409).json({ success: false, error: 'Vous êtes déjà propriétaire d\'une équipe.' });
+  if (existingTeam) {
+    return NextResponse.json(
+      { success: false, error: "Vous êtes déjà propriétaire d'une équipe." },
+      { status: 409 }
+    );
+  }
 
   try {
     const newTeam = await prisma.$transaction(async (tx) => {
       const team = await tx.team.create({ data: { name, ownerId } });
       await tx.teamMember.create({ data: { teamId: team.id, userId: ownerId, role: 'OWNER' } });
-      await tx.user.update({ where: { id: ownerId }, data: { teamId: team.id } });
+      await tx.user.update({ where: { id: ownerId }, data: { teams: { connect: { id: team.id } } } });
       return team;
     });
-    return res.status(201).json({ success: true, data: newTeam });
+    return NextResponse.json({ success: true, data: newTeam }, { status: 201 });
   } catch (error) {
-    return res.status(500).json({ success: false, error: 'Erreur lors de la création de l\'équipe.' });
+    return NextResponse.json(
+      { success: false, error: "Erreur lors de la création de l'équipe." },
+      { status: 500 }
+    );
   }
 }
 
 /**
  * Crée et envoie une invitation pour rejoindre une équipe.
  */
-async function createInvitation(req: AuthenticatedRequest, res: NextApiResponse, teamId: number) {
-  const { email, role } = req.body;
-  const inviter = req.user;
+async function createInvitation(req: NextRequest, user: User, teamId: number): Promise<NextResponse> {
+  const body = await req.json();
+  const { email, role } = body;
 
   // 1. Vérification des permissions : l'inviteur doit être OWNER ou ADMIN.
-  const inviterMembership = await prisma.teamMember.findUnique({ where: { teamId_userId: { teamId, userId: inviter.id } } });
+  const inviterMembership = await prisma.teamMember.findUnique({
+    where: { teamId_userId: { teamId, userId: user.id } },
+  });
   if (!inviterMembership || !['OWNER', 'ADMIN'].includes(inviterMembership.role)) {
-      return res.status(403).json({ success: false, error: 'Permissions insuffisantes pour inviter des membres.' });
+    return NextResponse.json(
+      { success: false, error: 'Permissions insuffisantes pour inviter des membres.' },
+      { status: 403 }
+    );
   }
 
   // 2. Création du token et de l'invitation en base de données
   const token = randomBytes(20).toString('hex');
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); 
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   const team = await prisma.team.findUnique({ where: { id: teamId } });
-  if (!team) return res.status(404).json({ success: false, error: "Équipe non trouvée." });
-  
+  if (!team) {
+    return NextResponse.json(
+      { success: false, error: 'Équipe non trouvée.' },
+      { status: 404 }
+    );
+  }
+
   const invitation = await prisma.teamInvitation.create({
-      data: { email, role, teamId, token, expiresAt, invitedById: inviter.id }
+    data: { email, role, teamId, token, expiresAt, invitedById: user.id },
   });
 
   // 3. Envoi de l'e-mail
   try {
-    await sendTeamInvitationEmail(email, inviter.username || inviter.email, team.name, token);
+    await sendTeamInvitationEmail(email, user.username || user.email, team.name, token);
   } catch (error) {
-      // Même si l'email échoue, l'invitation est créée. On peut la renvoyer manuellement.
-      console.error("L'envoi de l'email d'invitation a échoué:", error);
+    // Même si l'email échoue, l'invitation est créée. On peut la renvoyer manuellement.
+    console.error("L'envoi de l'email d'invitation a échoué:", error);
   }
 
-  return res.status(201).json({ success: true, data: invitation });
+  return NextResponse.json({ success: true, data: invitation }, { status: 201 });
 }
 
 /**
  * Récupère la liste des membres d'une équipe.
  */
-async function listMembers(req: AuthenticatedRequest, res: NextApiResponse, teamId: number) {
-    const members = await prisma.teamMember.findMany({
-        where: { teamId },
-        include: { user: { select: { id: true, email: true, username: true } } },
-        orderBy: { role: 'asc' }, // Affiche OWNER, puis ADMIN, puis MEMBER
-    });
-    return res.status(200).json({ success: true, data: members });
+async function listMembers(teamId: number): Promise<NextResponse> {
+  const members = await prisma.teamMember.findMany({
+    where: { teamId },
+    include: { user: { select: { id: true, email: true, username: true } } },
+    orderBy: { role: 'asc' },
+  });
+  return NextResponse.json({ success: true, data: members });
 }
 
 /**
  * Récupère la liste des invitations en attente pour une équipe.
  */
-async function listInvitations(req: AuthenticatedRequest, res: NextApiResponse, teamId: number) {
-    const invitations = await prisma.teamInvitation.findMany({
-        where: { teamId, expiresAt: { gt: new Date() } }, // Uniquement les invitations valides
-    });
-    return res.status(200).json({ success: true, data: invitations });
+async function listInvitations(teamId: number): Promise<NextResponse> {
+  const invitations = await prisma.teamInvitation.findMany({
+    where: { teamId, expiresAt: { gt: new Date() } },
+  });
+  return NextResponse.json({ success: true, data: invitations });
 }
 
 /**
  * Retire un membre d'une équipe.
  */
-async function removeMember(req: AuthenticatedRequest, res: NextApiResponse, teamId: number, memberUserIdToRemove: number) {
-  const currentUserId = req.user.id;
-  
+async function removeMember(user: User, teamId: number, memberUserIdToRemove: number): Promise<NextResponse> {
   // 1. Vérification des permissions : l'utilisateur actuel doit être OWNER ou ADMIN.
-  const currentUserMember = await prisma.teamMember.findUnique({ where: { teamId_userId: { teamId, userId: currentUserId } } });
+  const currentUserMember = await prisma.teamMember.findUnique({
+    where: { teamId_userId: { teamId, userId: user.id } },
+  });
   if (!currentUserMember || !['OWNER', 'ADMIN'].includes(currentUserMember.role)) {
-      return res.status(403).json({ success: false, error: "Permissions insuffisantes pour retirer un membre." });
+    return NextResponse.json(
+      { success: false, error: 'Permissions insuffisantes pour retirer un membre.' },
+      { status: 403 }
+    );
   }
-  
+
   // 2. Récupération du membre à supprimer et vérification des règles
-  const memberToRemove = await prisma.teamMember.findFirst({ where: { userId: memberUserIdToRemove, teamId } });
-  if (!memberToRemove) return res.status(404).json({ success: false, error: "Membre introuvable dans cette équipe." });
-  if (memberToRemove.role === 'OWNER') return res.status(400).json({ success: false, error: "Le propriétaire de l'équipe ne peut pas être retiré." });
+  const memberToRemove = await prisma.teamMember.findFirst({
+    where: { userId: memberUserIdToRemove, teamId },
+  });
+  if (!memberToRemove) {
+    return NextResponse.json(
+      { success: false, error: 'Membre introuvable dans cette équipe.' },
+      { status: 404 }
+    );
+  }
+  if (memberToRemove.role === 'OWNER') {
+    return NextResponse.json(
+      { success: false, error: "Le propriétaire de l'équipe ne peut pas être retiré." },
+      { status: 400 }
+    );
+  }
 
   // 3. Suppression
   await prisma.teamMember.delete({ where: { id: memberToRemove.id } });
-  return res.status(200).json({ success: true, message: "Membre retiré de l'équipe." });
+  return NextResponse.json({ success: true, message: "Membre retiré de l'équipe." });
 }
 
 /**
  * Annule une invitation en attente.
  */
-async function cancelInvitation(req: AuthenticatedRequest, res: NextApiResponse, teamId: number, invitationId: number) {
-  const currentUserId = req.user.id;
-  
+async function cancelInvitation(user: User, teamId: number, invitationId: number): Promise<NextResponse> {
   // 1. Vérification des permissions : l'utilisateur actuel doit être OWNER ou ADMIN.
-  const currentUserMember = await prisma.teamMember.findUnique({ where: { teamId_userId: { teamId, userId: currentUserId } } });
+  const currentUserMember = await prisma.teamMember.findUnique({
+    where: { teamId_userId: { teamId, userId: user.id } },
+  });
   if (!currentUserMember || !['OWNER', 'ADMIN'].includes(currentUserMember.role)) {
-      return res.status(403).json({ success: false, error: "Permissions insuffisantes pour annuler une invitation." });
+    return NextResponse.json(
+      { success: false, error: 'Permissions insuffisantes pour annuler une invitation.' },
+      { status: 403 }
+    );
   }
 
   // 2. Suppression de l'invitation (assurant qu'elle appartient bien à l'équipe)
   try {
     await prisma.teamInvitation.delete({ where: { id: invitationId, teamId } });
-    return res.status(200).json({ success: true, message: "Invitation annulée avec succès." });
+    return NextResponse.json({ success: true, message: 'Invitation annulée avec succès.' });
   } catch (error) {
-      // Prisma lance une erreur si l'enregistrement n'est pas trouvé
-      return res.status(404).json({ success: false, error: "Invitation non trouvée." });
+    // Prisma lance une erreur si l'enregistrement n'est pas trouvé
+    return NextResponse.json(
+      { success: false, error: 'Invitation non trouvée.' },
+      { status: 404 }
+    );
   }
 }

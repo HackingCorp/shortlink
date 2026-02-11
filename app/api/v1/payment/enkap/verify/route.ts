@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    // Vérifier l'authentification
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.id) {
+      return NextResponse.json({ success: false, error: 'Non autorisé' }, { status: 401 });
+    }
+
     const { transactionId, merchantReference } = await request.json();
 
     if (!transactionId && !merchantReference) {

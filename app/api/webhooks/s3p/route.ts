@@ -5,7 +5,6 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import crypto from 'crypto';
 import prisma from '@/lib/prisma';
-import { s3pMobileWallet } from '@/lib/s3p/mobileWalletService';
 
 // Interface pour les notifications S3P
 interface S3PWebhookPayload {
@@ -116,7 +115,9 @@ async function handlePaymentSuccess(webhookData: S3PWebhookPayload['data']) {
     // Nettoyer périodiquement le cache
     if (processedWebhooks.size > 1000) {
       const first = processedWebhooks.values().next().value;
-      processedWebhooks.delete(first);
+      if (first !== undefined) {
+        processedWebhooks.delete(first);
+      }
     }
 
     return { 
@@ -160,7 +161,7 @@ export async function POST(request: Request) {
   
   try {
     const body = await request.text();
-    const headersList = headers();
+    const headersList = await headers();
     const signature = headersList.get('x-s3p-signature') || '';
     const webhookSecret = process.env.S3P_WEBHOOK_SECRET || '';
 
@@ -172,8 +173,16 @@ export async function POST(request: Request) {
       signature: signature ? 'présente' : 'manquante'
     });
 
-    // Vérification de la signature
-    if (webhookSecret && !verifyWebhookSignature(body, signature, webhookSecret)) {
+    // Vérification de la signature (obligatoire)
+    if (!webhookSecret) {
+      console.error(`[${webhookId}] S3P_WEBHOOK_SECRET non configuré - webhook rejeté`);
+      return NextResponse.json(
+        { error: 'Configuration webhook manquante' },
+        { status: 500 }
+      );
+    }
+
+    if (!verifyWebhookSignature(body, signature, webhookSecret)) {
       console.error(`[${webhookId}] Signature invalide`);
       return NextResponse.json(
         { error: 'Signature invalide' },
@@ -258,24 +267,6 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-}
-
-// Endpoint GET pour vérification
-export async function GET() {
-  const status = {
-    service: 'S3P Webhook',
-    status: 'active',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    uptime: process.uptime(),
-    memoryUsage: process.memoryUsage(),
-    endpoints: {
-      POST: '/api/webhooks/s3p - Traitement des notifications S3P',
-      GET: '/api/webhooks/s3p - Vérification du statut'
-    }
-  };
-
-  return NextResponse.json(status);
 }
 
 // Configuration de la route

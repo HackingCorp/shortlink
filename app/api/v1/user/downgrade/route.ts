@@ -73,9 +73,9 @@ export async function POST(request: Request) {
         currency: 'XAF',
         status: 'EXPIRED',
         paymentMethod: 'SYSTEM',
-        paymentReference: `downgrade_${Date.now()}`,
         plan: 'FREE',
-        period: 'NONE',
+        periodStart: new Date(),
+        periodEnd: new Date(),
         metadata: {
           previousRole: user.role,
           reason: 'Abonnement expiré - Rétrogradation automatique',

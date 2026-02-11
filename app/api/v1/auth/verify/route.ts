@@ -59,14 +59,4 @@ export async function POST(request: Request) {
   }
 }
 
-// Optionnel: Ajouter une méthode OPTIONS pour le CORS si nécessaire
-export async function OPTIONS() {
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
-    },
-  });
-}
+// CORS géré par le middleware principal

@@ -5,7 +5,6 @@ import prisma from '@/lib/prisma';
 
 
 export async function GET(request: NextRequest) {
-  console.log('Début de la requête GET /api/v1/stats/analytics');
   try {
     // 1. Authentification et récupération de la session
 
@@ -38,21 +37,12 @@ export async function GET(request: NextRequest) {
       linkWhereClause = { team_id: teamId };
     }
     
-    console.log('Clause WHERE pour les liens:', JSON.stringify(linkWhereClause, null, 2));
-    
-    // 3. Débogage : Vérification des données existantes
-    console.log('=== DÉBOGAGE : Vérification des données ===');
-    
     // Vérifier les liens de l'utilisateur
     const userLinks = await prisma.link.findMany({
       where: linkWhereClause,
       select: { id: true, short_code: true, long_url: true, click_count: true }
     });
-    console.log(`Liens trouvés pour l'utilisateur ${userId}:`, userLinks.length);
-    console.log('Détails des liens:', userLinks);
-    
     if (userLinks.length === 0) {
-      console.log('Aucun lien trouvé pour cet utilisateur');
       return NextResponse.json({
         success: true,
         data: {
@@ -85,11 +75,7 @@ export async function GET(request: NextRequest) {
         referer: true 
       }
     });
-    console.log(`Clics trouvés:`, allClicks.length);
-    console.log('Échantillon de clics:', allClicks.slice(0, 3));
-    
     if (allClicks.length === 0) {
-      console.log('Aucun clic trouvé pour ces liens');
       return NextResponse.json({
         success: true,
         data: {
@@ -136,16 +122,6 @@ export async function GET(request: NextRequest) {
     const cities = groupAndCount('city');
     const referers = groupAndCount('referer');
     
-    console.log('=== RÉSULTATS CALCULÉS ===');
-    console.log('Total clics:', totalClicks);
-    console.log('Visiteurs uniques:', uniqueVisitors);
-    console.log('Pays:', countries.length, 'éléments');
-    console.log('Navigateurs:', browsers.length, 'éléments');
-    console.log('OS:', os.length, 'éléments');
-    console.log('Appareils:', devices.length, 'éléments');
-    console.log('Villes:', cities.length, 'éléments');
-    console.log('Référents:', referers.length, 'éléments');
-    
     // 5. Préparation de la réponse finale
     const responseData = {
       success: true,
@@ -161,7 +137,6 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    console.log('Données finales envoyées:', responseData);
     return NextResponse.json(responseData);
 
   } catch (error: any) {
