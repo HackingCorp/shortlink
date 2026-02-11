@@ -35,8 +35,8 @@ yarn-error.log*
 !.env.example
 
 # Database backups
-*.sql
 backup_*.sql
+*.dump
 
 # Logs
 logs/
