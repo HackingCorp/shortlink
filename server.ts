@@ -2,7 +2,7 @@ import 'dotenv/config';
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
-import { paymentVerificationJob } from './lib/cron/paymentVerificationJob.ts';
+import { paymentVerificationJob } from './lib/cron/paymentVerificationJob';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
@@ -46,7 +46,7 @@ setupPaymentVerification();
 
 const dev = process.env.NODE_ENV !== 'production'
 const hostname = 'localhost'
-const port = process.env.PORT || 3000
+const port = Number(process.env.PORT) || 3000
 
 const app = next({ dev, hostname, port })
 const handle = app.getRequestHandler()
@@ -54,7 +54,7 @@ const handle = app.getRequestHandler()
 app.prepare().then(() => {
   createServer(async (req, res) => {
     try {
-      const parsedUrl = parse(req.url, true)
+      const parsedUrl = parse(req.url!, true)
       const { pathname, query } = parsedUrl
 
       if (pathname === '/a') {
@@ -69,8 +69,7 @@ app.prepare().then(() => {
       res.statusCode = 500
       res.end('internal server error')
     }
-  }).listen(port, (err) => {
-    if (err) throw err
+  }).listen(port, () => {
     console.log(`> Ready on http://${hostname}:${port}`)
   })
 })

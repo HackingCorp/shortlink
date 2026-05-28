@@ -31,7 +31,7 @@ async function resetDatabase() {
         console.log(`Deleting data from ${table}...`);
         await prisma.$executeRawUnsafe(`TRUNCATE TABLE "${table}" CASCADE;`);
         console.log(`✅ Deleted data from ${table}`);
-      } catch (error) {
+      } catch (error: any) {
         console.warn(`⚠️ Could not delete data from ${table}:`, error.message);
       }
     }

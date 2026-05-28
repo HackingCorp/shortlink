@@ -126,7 +126,7 @@ model User {
 }
 model Plan {
   id          String   @id @default(uuid())
-  name        String   // "standard", "pro", "enterprise"
+  name        String   @unique // "standard", "pro", "enterprise"
   displayName String   // "Standard", "Pro", "Entreprise"
   price       Int      // 9990, 19990, 32900 (en FCFA)
   currency    String   @default("FCFA")

@@ -1,10 +1,9 @@
 import { Configuration, MasterdataApi } from 'maviance-s3p-client';
-import { env } from '@/env.mjs';
 
 const config = new Configuration({
-  basePath: env.S3P_API_BASE_URL,
-  apiKey: `Bearer ${env.S3P_API_KEY}`,
-  accessToken: env.S3P_ACCESS_TOKEN,
+  basePath: process.env.S3P_API_BASE_URL,
+  apiKey: `Bearer ${process.env.S3P_API_KEY}`,
+  accessToken: process.env.S3P_ACCESS_TOKEN,
 });
 
 const masterdataApi = new MasterdataApi(config);

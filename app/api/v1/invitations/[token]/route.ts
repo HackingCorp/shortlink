@@ -1,10 +1,14 @@
-import { NextApiRequest, NextApiResponse } from 'next';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'GET') return res.status(405).end();
-  const { token } = req.query;
-  if (!token || typeof token !== 'string') return res.status(400).json({ error: 'Token manquant.' });
+export async function GET(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  const { token } = await params;
+  if (!token) {
+    return NextResponse.json({ error: 'Token manquant.' }, { status: 400 });
+  }
   const invitation = await prisma.teamInvitation.findUnique({
     where: { token },
     select: {
@@ -12,7 +16,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     },
   });
   if (!invitation || invitation.expiresAt < new Date()) {
-    return res.status(404).json({ error: 'Invitation invalide ou expirée.' });
+    return NextResponse.json({ error: 'Invitation invalide ou expirée.' }, { status: 404 });
   }
-  res.status(200).json(invitation);
+  return NextResponse.json(invitation);
 }
