@@ -186,7 +186,7 @@ export function Sidebar() {
       )}
 
       {/* Navigation principale */}
-      <nav className="flex-1 overflow-y-auto py-4">
+      <nav aria-label="Navigation principale" className="flex-1 overflow-y-auto py-4">
         {filteredNavSections.map((section, sectionIndex) => (
           <div key={section.title} className={sectionIndex > 0 ? "mt-6" : ""}>
             <h3 className="px-4 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
@@ -196,11 +196,12 @@ export function Sidebar() {
               {section.items.map((item) => {
                 const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
                 const Icon = item.icon;
-                
+
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
+                    aria-current={isActive ? 'page' : undefined}
                     className={`group flex items-center justify-between px-4 py-2.5 text-sm font-medium mx-2 rounded-lg transition-colors ${
                       isActive
                         ? 'bg-indigo-50 text-indigo-700 border border-indigo-100'

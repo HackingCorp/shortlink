@@ -1,24 +1,19 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { Prisma } from '@prisma/client';
+import { requireAuth } from '@/lib/apiAuth';
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const teamId = searchParams.get('teamId');
-        
-        // Récupération de l'utilisateur authentifié
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json(
-                { success: false, error: 'Authentification requise.' },
-                { status: 401 }
-            );
-        }
-        
-        const userId = parseInt(session.user.id);
-        let whereClause: any = { user_id: userId, team_id: null };
+
+        const auth = await requireAuth(request);
+        if (auth.error) return auth.error;
+        const user = auth.user!;
+
+        const userId = user.id;
+        let whereClause: Prisma.LinkWhereInput = { user_id: userId, team_id: null };
 
         // Si un teamId est fourni, on vérifie l'appartenance
         if (teamId) {
@@ -37,7 +32,7 @@ export async function GET(request: Request) {
                     { status: 403 }
                 );
             }
-            whereClause = { teamId: parseInt(teamId) };
+            whereClause = { team_id: parseInt(teamId) };
         }
 
      

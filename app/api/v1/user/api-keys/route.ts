@@ -50,7 +50,7 @@ async function listApiKeys(userId: string) {
 
 // Créer une nouvelle clé API
 async function createApiKey(userId: string, name: string) {
-  const apiKey = `sk_${randomBytes(24).toString('hex')}`;
+  const apiKey = `sk_${randomBytes(32).toString('hex')}`;
   const userIdInt = parseInt(userId);
   
   // Vérifier la limite de clés pour l'utilisateur
@@ -91,40 +91,30 @@ async function createApiKey(userId: string, name: string) {
 
 // Supprimer une clé API
 async function revokeApiKey(userId: string, keyId: number) {
-  console.log(`Tentative de suppression de la clé ${keyId} pour l'utilisateur ${userId}`);
-  
   // Vérifier que la clé appartient bien à l'utilisateur
   const key = await prisma.apiKey.findUnique({
-    where: { 
-      id: keyId 
+    where: {
+      id: keyId
+    },
+    select: {
+      id: true,
+      userId: true
     }
   });
-  
-  console.log('Clé trouvée dans la base de données:', key);
-  
+
   if (!key) {
-    console.error('Erreur: Clé non trouvée dans la base de données');
     throw new Error('Clé non trouvée');
   }
-  
+
   if (key.userId !== parseInt(userId)) {
-    console.error(`Erreur: L'utilisateur ${userId} n'est pas autorisé à supprimer la clé ${keyId}`);
     throw new Error('Non autorisé');
   }
-  
-  console.log(`Suppression de la clé ${keyId}...`);
-  
-  try {
-    const result = await prisma.apiKey.delete({ 
-      where: { id: keyId }
-    });
-    
-    console.log('Clé supprimée avec succès:', result);
-    return { success: true };
-  } catch (error) {
-    console.error('Erreur lors de la suppression de la clé:', error);
-    throw error;
-  }
+
+  await prisma.apiKey.delete({
+    where: { id: keyId }
+  });
+
+  return { success: true };
 }
 
 // GET - Récupérer les clés API

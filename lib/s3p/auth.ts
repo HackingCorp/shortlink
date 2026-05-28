@@ -13,7 +13,7 @@ interface S3PAuthParams {
 
 // Génération d'un nonce unique
 export const generateNonce = (): string => {
-  return Math.random().toString(36).substr(2) + Date.now().toString(36);
+  return crypto.randomBytes(16).toString('hex');
 };
 
 export const generateTimestamp = (): string => {
@@ -30,58 +30,43 @@ export const percentEncode = (str: string): string => {
     .replace(/~/g, '%7E');
 };
 
+const isDebug = process.env.NODE_ENV === 'development' && process.env.S3P_LOG_LEVEL === 'debug';
+
 // Génération de la chaîne de base selon la spécification S3P officielle
 export const createBaseString = (
   method: string,
   url: string,
   params: Record<string, any>
 ): string => {
-  console.log('=== DEBUG: Création de la chaîne de base S3P ===');
-  console.log('Méthode HTTP:', method.toUpperCase());
-  console.log('URL:', url);
-  console.log('Paramètres bruts:', JSON.stringify(params, null, 2));
-
   const sortedKeys = Object.keys(params).sort();
-  console.log('Clés triées alphabétiquement:', sortedKeys);
 
   const parameterString = sortedKeys
     .map(key => {
       const value = params[key];
-      
       return `${key}=${value}`;
     })
     .join('&');
 
-  console.log('Chaîne de paramètres (Étape 1):', parameterString);
+  const baseUrl = url.split('?')[0];
 
-  const baseUrl = url.split('?')[0]; 
-  
   const baseString = [
     method.toUpperCase(),
     percentEncode(baseUrl),
     percentEncode(parameterString)
   ].join('&');
 
-  console.log('URL de base (FQDN):', baseUrl);
-  console.log('URL encodée:', percentEncode(baseUrl));
-  console.log('Paramètres encodés:', percentEncode(parameterString));
-  console.log('Chaîne de base finale (Étape 2):', baseString);
+  if (isDebug) {
+    console.log('[S3P] Base string created for', method.toUpperCase(), baseUrl);
+  }
 
   return baseString;
 };
 
-// Calcul de la signature HMAC-SHA1 selon la spécification S3P
+// Calcul de la signature HMAC-SHA256 selon la spécification S3P
 export const calculateSignature = (baseString: string, secret: string): string => {
-  console.log('=== DEBUG: Calcul de la signature HMAC-SHA1 ===');
-  console.log('Chaîne de base:', baseString);
-  console.log('Clé secrète:', secret);
-
-  const hmac = crypto.createHmac('sha1', secret);
+  const hmac = crypto.createHmac('sha256', secret);
   hmac.update(baseString, 'utf8');
-  const signature = hmac.digest('base64');
-
-  console.log('Signature calculée (base64):', signature);
-  return signature;
+  return hmac.digest('base64');
 };
 
 export const generateAuthHeader = (
@@ -95,26 +80,17 @@ export const generateAuthHeader = (
 
   const authParams = {
     s3pAuth_nonce: nonce,
-    s3pAuth_signature_method: 'HMAC-SHA1',
+    s3pAuth_signature_method: 'HMAC-SHA256',
     s3pAuth_timestamp: timestamp,
     s3pAuth_token: S3P_CONFIG.ACCESS_TOKEN
   };
 
-  console.log('=== DEBUG: Génération de l\'en-tête Authorization S3P ===');
-  console.log('Méthode:', method);
-  console.log('URL:', url);
-  console.log('Paramètres d\'auth:', authParams);
-
   let allParams: Record<string, any>;
 
   if (method.toUpperCase() === 'POST') {
-    
     allParams = { ...authParams, ...bodyParams };
-    console.log('POST: Utilisation des paramètres du body:', bodyParams);
   } else {
-    
     allParams = { ...authParams, ...queryParams };
-    console.log('GET: Utilisation des paramètres de requête:', queryParams);
   }
 
   // Filtrer les valeurs null/undefined/vides
@@ -125,21 +101,20 @@ export const generateAuthHeader = (
     }
   }
 
-  console.log('Paramètres filtrés pour signature:', JSON.stringify(filteredParams, null, 2));
-
   const baseString = createBaseString(method, url, filteredParams);
   const signature = calculateSignature(baseString, S3P_CONFIG.ACCESS_SECRET);
 
   const authHeader = 's3pAuth,' + [
     `s3pAuth_nonce="${nonce}"`,
     `s3pAuth_signature="${signature}"`,
-    's3pAuth_signature_method="HMAC-SHA1"',
+    's3pAuth_signature_method="HMAC-SHA256"',
     `s3pAuth_timestamp="${timestamp}"`,
     `s3pAuth_token="${S3P_CONFIG.ACCESS_TOKEN}"`
   ].join(',');
 
-  console.log('En-tête Authorization final:', authHeader);
-  console.log('=== FIN DEBUG ===\n');
+  if (isDebug) {
+    console.log('[S3P] Auth header generated for', method, url);
+  }
 
   return authHeader;
 };
@@ -158,35 +133,23 @@ export class S3PAuthClient {
   
   async get(endpoint: string, queryParams: Record<string, any> = {}): Promise<any> {
     const url = `${this.baseUrl}${endpoint}`;
-    
-    console.log('=== DEBUG: Requête GET S3P ===');
-    console.log('URL de base:', this.baseUrl);
-    console.log('Endpoint:', endpoint);
-    console.log('URL complète:', url);
-    console.log('Paramètres de requête:', queryParams);
-  
-    // Générer l'en-tête d'authentification avec les paramètres de requête
+
     const authHeader = generateAuthHeader('GET', url, {}, queryParams);
-    
-    // Construire l'URL avec les paramètres de requête
+
     const queryString = new URLSearchParams();
     Object.entries(queryParams).forEach(([key, value]) => {
       if (value !== undefined && value !== null) {
         queryString.append(key, String(value));
       }
     });
-    
+
     const fullUrl = queryString.toString() ? `${url}?${queryString}` : url;
-  
-    console.log('URL finale avec query params:', fullUrl);
-    console.log('En-tête Authorization:', authHeader);
-  
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      console.log(`[S3P GET] Timeout après 60s sur ${fullUrl}`);
       controller.abort();
     }, 60000);
-  
+
     try {
       const response = await fetch(fullUrl, {
         method: 'GET',
@@ -197,70 +160,49 @@ export class S3PAuthClient {
         },
         signal: controller.signal
       });
-  
+
       clearTimeout(timeoutId);
-  
-      console.log('=== RÉPONSE S3P GET ===');
-      console.log('Status:', response.status, response.statusText);
-      console.log('Headers:', Object.fromEntries(response.headers.entries()));
-  
+
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Erreur S3P API:', {
-          status: response.status,
-          statusText: response.statusText,
-          url: fullUrl,
-          body: errorText
-        });
-        
+        console.error('[S3P] GET error:', response.status, fullUrl);
+
         let errorData;
         try {
           errorData = JSON.parse(errorText);
         } catch {
           errorData = { message: errorText };
         }
-        
+
         throw new Error(`S3P Error ${response.status}: ${JSON.stringify(errorData)}`);
       }
-  
-      const responseData = await response.json();
-      console.log('Données de réponse:', responseData);
-      return responseData;
-  
+
+      return await response.json();
+
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('Erreur lors de la requête GET:', error);
+      console.error('[S3P] GET request failed:', endpoint);
       throw error;
     }
   }
 
-  // ✅ REQUÊTE POST CORRECTE
   async post(endpoint: string, bodyData: Record<string, any> = {}): Promise<any> {
     const url = `${this.baseUrl}${endpoint}`;
-    
-    console.log('=== DEBUG: Requête POST S3P ===');
-    console.log('URL:', url);
-    console.log('Données du body:', bodyData);
 
-    // Générer l'en-tête d'authentification avec les données du body
     const authHeader = generateAuthHeader('POST', url, bodyData, {});
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      console.log(`[S3P POST] Timeout après 60s sur ${url}`);
       controller.abort();
     }, 60000);
 
     try {
-      // S3P attend des données form-urlencoded
       const formData = new URLSearchParams();
       Object.entries(bodyData).forEach(([key, value]) => {
         if (value !== undefined && value !== null) {
           formData.append(key, String(value));
         }
       });
-
-      console.log('Données form-urlencoded:', formData.toString());
 
       const response = await fetch(url, {
         method: 'POST',
@@ -276,55 +218,32 @@ export class S3PAuthClient {
 
       clearTimeout(timeoutId);
 
-      console.log('=== RÉPONSE S3P POST ===');
-      console.log('Status:', response.status, response.statusText);
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Erreur S3P API POST:', {
-          status: response.status,
-          statusText: response.statusText,
-          url: url,
-          body: errorText
-        });
-        
+        console.error('[S3P] POST error:', response.status, endpoint);
         throw new Error(`S3P POST Error ${response.status}: ${errorText}`);
       }
 
-      const responseData = await response.json();
-      console.log('Données de réponse POST:', responseData);
-      return responseData;
+      return await response.json();
 
     } catch (error) {
       clearTimeout(timeoutId);
-      console.error('Erreur lors de la requête POST:', error);
+      console.error('[S3P] POST request failed:', endpoint);
       throw error;
     }
   }
 
   async cashoutGet(serviceId?: number): Promise<any> {
-    try {
-      console.log('=== DEBUG: cashoutGet selon documentation officielle ===');
-      
-      const endpoint = '/cashout';
-      
-      const queryParams: Record<string, any> = {
-        xApiVersion: '3.0.0'
-      };
-      
-      
-      if (serviceId !== undefined) {
-        queryParams.serviceid = serviceId;
-      }
-      
-      console.log('Endpoint:', endpoint);
-      console.log('Paramètres de requête:', queryParams);
-      
-      return await this.get(endpoint, queryParams);
-    } catch (error) {
-      console.error('Erreur cashoutGet:', error);
-      throw error;
+    const endpoint = '/cashout';
+    const queryParams: Record<string, any> = {
+      xApiVersion: '3.0.0'
+    };
+
+    if (serviceId !== undefined) {
+      queryParams.serviceid = serviceId;
     }
+
+    return await this.get(endpoint, queryParams);
   }
 
   async verifytxGet(xApiVersion: string, ptn?: string, trid?: string): Promise<any> {
@@ -336,7 +255,6 @@ export class S3PAuthClient {
     if (ptn) queryParams.ptn = ptn;
     if (trid) queryParams.trid = trid;
 
-    console.log('[verifytxGet] Vérification transaction:', queryParams);
     return this.get('/verifytx', queryParams);
   }
 
@@ -350,7 +268,6 @@ export class S3PAuthClient {
     customerPhone: string;
     metadata: string;
   }): Promise<any> {
-    console.log('[quotesStdPost] Création de devis:', body);
     return this.post('/quotestd', body);
   }
 
@@ -380,23 +297,17 @@ async collectstdPost(xApiVersion: string, bodyData: {
     }
   }
 
-  console.log('[collectstdPost] Collecte de paiement:', bodyData);
   return this.post('/collectstd', bodyData);
 }
   async testCashoutGet(): Promise<void> {
     try {
-      console.log('=== TEST cashoutGet ===');
-      
-      console.log('Test 1: cashoutGet sans serviceid');
       const result1 = await this.cashoutGet();
-      console.log('Résultat sans serviceid:', result1);
-      
-      console.log('Test 2: cashoutGet avec serviceid=2');
       const result2 = await this.cashoutGet(2);
-      console.log('Résultat avec serviceid=2:', result2);
-      
+      if (isDebug) {
+        console.log('[S3P] Test cashoutGet results:', { result1, result2 });
+      }
     } catch (error) {
-      console.error('Test cashoutGet échoué:', error);
+      console.error('[S3P] Test cashoutGet failed:', error);
     }
   }
 }

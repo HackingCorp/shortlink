@@ -1,29 +1,36 @@
 import { s3pClient } from '@/lib/s3p/auth';
 
-export interface S3PResponse<T = any> {
+export interface S3PResponse<T = unknown> {
   success: boolean;
   data?: T;
   message?: string;
-  error?: any;
+  error?: S3PError;
 }
 
 export interface S3PError {
   status: number;
   message: string;
   code?: string;
-  details?: any;
+  details?: unknown;
 }
 
-function handleApiError(error: any): S3PError {
-  if (error.response) {
-    const { status, data } = error.response;
+interface AxiosLikeError {
+  response?: { status: number; data?: { message?: string; code?: string } };
+  request?: unknown;
+  message?: string;
+}
+
+function handleApiError(error: unknown): S3PError {
+  const err = error as AxiosLikeError;
+  if (err.response) {
+    const { status, data } = err.response;
     return {
       status,
       message: data?.message || 'Erreur inconnue du serveur',
       code: data?.code,
       details: data,
     };
-  } else if (error.request) {
+  } else if (err.request) {
     return {
       status: 503,
       message: 'Impossible de se connecter au service de paiement',
@@ -32,7 +39,7 @@ function handleApiError(error: any): S3PError {
   } else {
     return {
       status: 400,
-      message: error.message || 'Erreur de configuration de la requête',
+      message: err.message || 'Erreur de configuration de la requête',
       code: 'REQUEST_ERROR',
     };
   }
@@ -80,7 +87,7 @@ export const s3pService = {
     customerName: string;
     customerEmail?: string;
     customerPhone?: string;
-    metadata?: Record<string, any>;
+    metadata?: Record<string, unknown>;
   }) {
     try {
       const response = await s3pClient.quotesStdPost({
@@ -117,7 +124,7 @@ async collectPayment(params: {
   customerEmail: string;
   customerId: string;
   transactionId: string;
-  metadata?: any;
+  metadata?: Record<string, unknown>;
 }): Promise<S3PResponse> {
   try {
     // STRUCTURE EXACTE selon la documentation CollectionRequest

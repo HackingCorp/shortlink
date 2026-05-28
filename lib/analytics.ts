@@ -1,4 +1,6 @@
 import prisma from './prisma';
+import { Prisma } from '@prisma/client';
+import { isLocalIP } from '@/lib/geoLocation';
 
 /**
  * Enrichit les informations d'un clic avec des données de géolocalisation et d'appareil
@@ -8,47 +10,29 @@ export async function enrichClick(clickId: number, ip: string, userAgent: string
     // Détection du navigateur et de l'OS à partir du User-Agent
     const deviceInfo = detectDevice(userAgent);
     const deviceType = detectDeviceType(userAgent);
-    
+
     // Préparer les données de base
-    const updateData: any = {
-      browser: deviceInfo.browser || 'Inconnu',
-      os: deviceInfo.os || 'Inconnu',
-      device_type: deviceType,
-      raw_data: {
-        user_agent: userAgent,
-        detected_at: new Date().toISOString()
-      }
+    let rawData: Record<string, unknown> = {
+      user_agent: userAgent,
+      detected_at: new Date().toISOString()
     };
+    let country: string | undefined;
+    let city: string | undefined;
 
     // Si ce n'est pas une adresse IP locale, on essaie la géolocalisation
     if (!isLocalIP(ip)) {
       try {
         console.log(`[DEBUG] Tentative de géolocalisation pour l'IP: ${ip}`);
         const geoData = await fetchGeoData(ip);
-        
+
         if (geoData) {
           console.log('[DEBUG] Données brutes de géolocalisation:', JSON.stringify(geoData, null, 2));
-          
-          // Mettre à jour les champs de localisation avec des valeurs par défaut explicites
-          updateData.country = geoData.country || 'Inconnu';
-          updateData.city = geoData.city || 'Inconnu';
-          updateData.region = geoData.region || null;
-          
-          console.log('[DEBUG] Données après traitement:', {
-            country: updateData.country,
-            city: updateData.city,
-            region: updateData.region
-          });
-          
-          // Si on a des coordonnées, on les enregistre
-          if (geoData.loc && geoData.loc[0] && geoData.loc[1]) {
-            updateData.latitude = parseFloat(geoData.loc[0]);
-            updateData.longitude = parseFloat(geoData.loc[1]);
-          }
-          
-          // Mettre à jour les données brutes
-          updateData.raw_data = {
-            ...updateData.raw_data,
+
+          country = geoData.country || 'Inconnu';
+          city = geoData.city || 'Inconnu';
+
+          rawData = {
+            ...rawData,
             ip: geoData.ip || ip,
             isp: geoData.isp,
             org: geoData.org,
@@ -56,7 +40,7 @@ export async function enrichClick(clickId: number, ip: string, userAgent: string
             mobile: geoData.mobile,
             proxy: geoData.proxy,
             hosting: geoData.hosting,
-            hostname: (geoData as any)?.hostname,
+            hostname: geoData.hostname,
             location: geoData.loc ? {
               latitude: geoData.loc[0],
               longitude: geoData.loc[1]
@@ -68,9 +52,8 @@ export async function enrichClick(clickId: number, ip: string, userAgent: string
         }
       } catch (error) {
         console.error('Erreur lors de la géolocalisation:', error);
-        // En cas d'erreur, on enregistre l'erreur dans les données brutes
-        updateData.raw_data = {
-          ...updateData.raw_data,
+        rawData = {
+          ...rawData,
           geolocation_error: error instanceof Error ? error.message : String(error)
         };
       }
@@ -79,15 +62,13 @@ export async function enrichClick(clickId: number, ip: string, userAgent: string
     }
 
     // Mettre à jour le clic avec les informations disponibles
-    // Ne conserver que les champs qui existent dans le modèle Prisma
-    const validUpdateData = {
-      country: updateData.country,
-      city: updateData.city,
-      device_type: updateData.device_type,
-      browser: updateData.browser,
-      os: updateData.os,
-      raw_data: updateData.raw_data,
-      user_agent: updateData.user_agent
+    const validUpdateData: Prisma.ClickUncheckedUpdateInput = {
+      country,
+      city,
+      device_type: deviceType,
+      browser: deviceInfo.browser || 'Inconnu',
+      os: deviceInfo.os || 'Inconnu',
+      raw_data: rawData as Prisma.InputJsonValue,
     };
 
     console.log('[DEBUG] Données à mettre à jour dans la base de données:', JSON.stringify(validUpdateData, null, 2));
@@ -109,20 +90,6 @@ export async function enrichClick(clickId: number, ip: string, userAgent: string
   } catch (error) {
     console.error('Erreur lors de l\'enrichissement du clic:', error);
   }
-}
-
-/**
- * Vérifie si l'adresse IP est locale
- */
-function isLocalIP(ip: string): boolean {
-  return (
-    ip === '127.0.0.1' || 
-    ip === '::1' || 
-    ip.startsWith('192.168.') || 
-    ip.startsWith('10.') || 
-    ip.startsWith('172.') ||
-    ip === '0.0.0.0'
-  );
 }
 
 /**
@@ -187,6 +154,7 @@ async function fetchGeoDataFallback(ip: string) {
       region: data.regionName || data.region || null,
       loc: [data.lat, data.lon],
       org: data.org || data.isp || null,
+      hostname: null as string | null,
       ip: data.query || ip,
       // Données supplémentaires
       isp: data.isp || null,

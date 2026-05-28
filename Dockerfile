@@ -50,7 +50,8 @@ ENV ENKAP_API_BASE_URL=$ENKAP_API_BASE_URL
 RUN node scripts/copy-leaflet-assets.js
 
 # 4.1 Générer le client Prisma avec la bonne URL de base de données
-RUN DATABASE_URL="postgresql://kutes:${DB_PASSWORD}@db:5432/kutes_prod?schema=public" prisma generate
+ARG DATABASE_URL
+RUN DATABASE_URL="${DATABASE_URL:-postgresql://placeholder:placeholder@localhost:5432/placeholder}" prisma generate
 
 # 5. Construire l'application pour la production
 RUN npm run build && \

@@ -1,17 +1,19 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { sendVerificationEmail } from '@/lib/email';
 
 // Set pour éviter les inscriptions concurrentes
 const inscriptionsEnCours = new Set<string>();
 
 /**
- * Génère un code de vérification numérique à 6 chiffres.
- * @returns {string} Un code de 6 chiffres sous forme de chaîne.
+ * Génère un code de vérification numérique à 8 chiffres de manière cryptographiquement sécurisée.
+ * @returns {string} Un code de 8 chiffres sous forme de chaîne.
  */
 const generateVerificationCode = (): string => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+  const code = randomBytes(4).readUInt32BE(0) % 100000000;
+  return code.toString().padStart(8, '0');
 };
 
 /**
@@ -104,33 +106,28 @@ export async function POST(request: Request) {
     const verificationCode = generateVerificationCode();
     const verificationCodeExpiry = new Date(Date.now() + 10 * 60 * 1000); // Expire dans 10 minutes
 
-    // 5. Utiliser une transaction pour assurer la cohérence
-    const result = await prisma.$transaction(async (tx) => {
-      // Création de l'utilisateur dans la base de données
-      const newUser = await tx.user.create({
-        data: {
-          username,
-          email: lowercasedEmail,
-          password: hashedPassword,
-          verificationCode,
-          verificationCodeExpiry,
-          role: 'FREE', // Rôle par défaut pour tout nouvel utilisateur
-        },
-      });
-
-      user = newUser;
-
-      // 6. Envoi de l'email de vérification après la création réussie de l'utilisateur
-      try {
-        await sendVerificationEmail(lowercasedEmail, verificationCode);
-      } catch (emailError) {
-        console.error('Erreur lors de l\'envoi de l\'email:', emailError);
-        // L'utilisateur sera supprimé automatiquement car la transaction échouera
-        throw emailError;
-      }
-
-      return newUser;
+    // 5. Create user in database (without email in transaction so email failure
+    //    doesn't roll back user creation)
+    const newUser = await prisma.user.create({
+      data: {
+        username,
+        email: lowercasedEmail,
+        password: hashedPassword,
+        verificationCode,
+        verificationCodeExpiry,
+        role: 'FREE',
+      },
     });
+
+    user = newUser;
+
+    // 6. Send verification email outside the transaction
+    try {
+      await sendVerificationEmail(lowercasedEmail, verificationCode);
+    } catch (emailError) {
+      console.error('Erreur lors de l\'envoi de l\'email:', emailError);
+      // User is created but email failed - they can request a new code later
+    }
 
     // 7. Envoi de la réponse de succès
     return NextResponse.json(

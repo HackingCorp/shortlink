@@ -1,106 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { User, PrismaClient, UserRole } from '@prisma/client';
-
-
-
-// ===================================================================
-// DÉBUT DU CODE INTÉGRÉ (anciennement lib/slugGenerator.ts)
-// ===================================================================
-
-const CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-const MIN_LENGTH = 2;
-const MAX_LENGTH = 5;
-const MAX_RETRIES_PER_LENGTH = 20;
-
-function generateRandomString(length: number): string {
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += CHARS.charAt(Math.floor(Math.random() * CHARS.length));
-  }
-  return result;
-}
-
-/**
- * Génère un code court unique.
- * @param db - L'instance du client Prisma à utiliser pour les requêtes BDD.
- */
-async function generateShortCode(db: PrismaClient): Promise<string> {
-  const config = await db.systemConfig.findUnique({ where: { id: 1 } });
-  if (!config) {
-      await db.systemConfig.create({ data: { id: 1, slug_generation_length: MIN_LENGTH }});
-  }
-  const currentConfig = await db.systemConfig.findUnique({ where: { id: 1 } });
-  let currentLength = currentConfig ? currentConfig.slug_generation_length : MIN_LENGTH;
-
-  for (let length = currentLength; length <= MAX_LENGTH; length++) {
-    if (length > currentLength) {
-      await db.systemConfig.update({
-        where: { id: 1 },
-        data: { slug_generation_length: length },
-      });
-      currentLength = length;
-    }
-    for (let i = 0; i < MAX_RETRIES_PER_LENGTH; i++) {
-      const slug = generateRandomString(length);
-      const existingLink = await db.link.findUnique({ where: { short_code: slug } });
-      if (!existingLink) {
-        return slug;
-      }
-    }
-  }
-  throw new Error('Impossible de générer un code court unique.');
-}
-// ===================================================================
-// FIN DU CODE INTÉGRÉ
-// ===================================================================
-
-/**
- * Authentifie un utilisateur via session ou clé API.
- * Retourne l'utilisateur ou null.
- */
-async function authenticateRequest(req: NextRequest): Promise<{ user: User | null; error?: NextResponse }> {
-  const apiKey = req.headers.get('x-api-key');
-
-  if (apiKey) {
-    try {
-      const apiKeyRecord = await prisma.apiKey.findUnique({
-        where: { key: apiKey },
-        include: { user: true }
-      });
-
-      if (apiKeyRecord?.user) {
-        await prisma.apiKey.update({
-          where: { id: apiKeyRecord.id },
-          data: { lastUsed: new Date() }
-        });
-        return { user: apiKeyRecord.user };
-      } else {
-        return {
-          user: null,
-          error: NextResponse.json({ success: false, error: 'Clé API invalide ou utilisateur non trouvé.' }, { status: 401 })
-        };
-      }
-    } catch (apiError) {
-      return {
-        user: null,
-        error: NextResponse.json({ success: false, error: 'Erreur lors de la vérification de la clé API.' }, { status: 500 })
-      };
-    }
-  }
-
-  const session = await getServerSession(authOptions);
-  const sessionUser = session?.user as { id: string; role?: UserRole } | undefined;
-
-  if (sessionUser?.id) {
-    const user = await prisma.user.findUnique({ where: { id: parseInt(sessionUser.id) } });
-    return { user };
-  }
-
-  return { user: null };
-}
+import { Prisma } from '@prisma/client';
+import { generateShortCode, isReservedSlug } from '@/lib/slugGenerator';
+import { authenticateRequest } from '@/lib/apiAuth';
 
 /**
  * Gère la création de liens (anonyme, personnel, ou d'équipe).
@@ -206,6 +108,14 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Reject reserved slugs used by application routes
+      if (isReservedSlug(customSlug)) {
+        return NextResponse.json(
+          { success: false, error: 'Ce slug est réservé et ne peut pas être utilisé.' },
+          { status: 400 }
+        );
+      }
+
       // Vérifier si le slug personnalisé est déjà utilisé
       const existingLink = await prisma.link.findUnique({
         where: { short_code: customSlug }
@@ -224,22 +134,14 @@ export async function POST(req: NextRequest) {
 
     // Créer le lien
     try {
-      const linkData: any = {
+      const linkData: Prisma.LinkUncheckedCreateInput = {
         long_url: longUrl,
         short_code: customSlug || await generateShortCode(prisma),
         title: title || null,
-        ...(expiresAt && { expires_at: new Date(expiresAt) })
+        ...(expiresAt && { expires_at: new Date(expiresAt) }),
+        ...(userId !== null && { user_id: userId }),
+        ...(finalTeamId && { team_id: finalTeamId }),
       };
-
-      // CORRECTION : Toujours associer le lien à l'utilisateur si disponible
-      if (userId !== null) {
-        linkData.user_id = userId;
-      }
-
-      // Associer à l'équipe si spécifiée
-      if (finalTeamId) {
-        linkData.team_id = finalTeamId;
-      }
 
       const link = await prisma.link.create({
         data: linkData,
@@ -304,8 +206,13 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const teamIdStr = searchParams.get('teamId');
+    const page = Math.max(1, parseInt(searchParams.get('page') || '1') || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') || '20') || 20));
+    const skip = (page - 1) * limit;
 
     try {
+        let whereClause: Prisma.LinkWhereInput;
+
         if (teamIdStr) {
             const teamId = parseInt(teamIdStr);
             const membership = await prisma.teamMember.findUnique({
@@ -314,12 +221,31 @@ export async function GET(req: NextRequest) {
             if (!membership) {
                 return NextResponse.json({ success: false, error: 'Accès non autorisé à cette équipe.' }, { status: 403 });
             }
-            const links = await prisma.link.findMany({ where: { team_id: teamId }, orderBy: { created_at: 'desc' } });
-            return NextResponse.json({ success: true, data: links });
+            whereClause = { team_id: teamId };
         } else {
-            const links = await prisma.link.findMany({ where: { user_id: userId, team_id: null }, orderBy: { created_at: 'desc' } });
-            return NextResponse.json({ success: true, data: links });
+            whereClause = { user_id: userId, team_id: null };
         }
+
+        const [links, total] = await Promise.all([
+            prisma.link.findMany({
+                where: whereClause,
+                orderBy: { created_at: 'desc' },
+                skip,
+                take: limit,
+            }),
+            prisma.link.count({ where: whereClause }),
+        ]);
+
+        return NextResponse.json({
+            success: true,
+            data: links,
+            pagination: {
+                page,
+                limit,
+                total,
+                totalPages: Math.ceil(total / limit),
+            },
+        });
     } catch (error) {
         console.error("Erreur lors de la récupération des liens:", error);
         return NextResponse.json({ success: false, error: 'Une erreur interne est survenue.' }, { status: 500 });

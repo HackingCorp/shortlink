@@ -1,9 +1,8 @@
 // app/api/v1/stats/timeline/route.ts
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireAuth } from '@/lib/apiAuth';
 
 function getDateRange(period: string) {
     const endDate = new Date();
@@ -17,26 +16,25 @@ function getDateRange(period: string) {
             startDate.setFullYear(endDate.getFullYear() - 1);
             break;
         default:
-            startDate.setDate(endDate.getDate() - 7); 
+            startDate.setDate(endDate.getDate() - 7);
             break;
     }
     return { startDate, endDate };
 }
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
         const teamId = searchParams.get('teamId');
-        const type = searchParams.get('type') || 'clicks_daily'; 
-        const period = searchParams.get('period') || '30d'; 
+        const type = searchParams.get('type') || 'clicks_daily';
+        const period = searchParams.get('period') || '30d';
 
-        const session = await getServerSession(authOptions);
-        if (!session?.user?.id) {
-            return NextResponse.json({ success: false, error: 'Authentification requise.' }, { status: 401 });
-        }
+        const auth = await requireAuth(request);
+        if (auth.error) return auth.error;
+        const user = auth.user!;
 
-        const userId = parseInt(session.user.id);
-        let whereClause: any = { user_id: userId, team_id: null };
+        const userId = user.id;
+        let whereClause: Prisma.LinkWhereInput = { user_id: userId, team_id: null };
 
         if (teamId) {
             const membership = await prisma.teamMember.findUnique({
@@ -45,7 +43,7 @@ export async function GET(request: Request) {
             if (!membership) {
                 return NextResponse.json({ success: false, error: "Accès non autorisé à cette équipe." }, { status: 403 });
             }
-            whereClause = { teamId: parseInt(teamId) };
+            whereClause = { team_id: parseInt(teamId) };
         }
 
         const { startDate } = getDateRange(period);
@@ -88,7 +86,7 @@ export async function GET(request: Request) {
             return NextResponse.json({ success: false, error: 'Type de statistique non valide.' }, { status: 400 });
         }
 
-        const formattedData = (results as any[]).map(item => ({
+        const formattedData = (results as Array<{ date: Date; value: bigint }>).map(item => ({
             date: new Date(item.date).toISOString().split('T')[0],
             value: Number(item.value)
         }));

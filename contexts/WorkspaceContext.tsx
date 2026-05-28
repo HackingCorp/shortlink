@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useState, useContext, ReactNode, useEffect } from 'react';
+import { createContext, useState, useContext, ReactNode, useEffect, useMemo, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 
 // Types
@@ -83,12 +83,17 @@ export const WorkspaceProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [status]);
 
-  const switchContext = (context: ActiveContext) => {
+  const switchContext = useCallback((context: ActiveContext) => {
     setActiveContext(context);
-  };
+  }, []);
+
+  const contextValue = useMemo(
+    () => ({ activeContext, availableContexts, switchContext, isLoading }),
+    [activeContext, availableContexts, switchContext, isLoading]
+  );
 
   return (
-    <WorkspaceContext.Provider value={{ activeContext, availableContexts, switchContext, isLoading }}>
+    <WorkspaceContext.Provider value={contextValue}>
       {children}
     </WorkspaceContext.Provider>
   );

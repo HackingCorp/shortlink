@@ -14,8 +14,12 @@ function getCorsHeaders(origin: string | null) {
   // Vérifier si l'origine est autorisée
   const isAllowed = origin && allowedOrigins.includes(origin);
 
+  if (!isAllowed) {
+    return null;
+  }
+
   return {
-    'Access-Control-Allow-Origin': isAllowed ? origin : allowedOrigins[0],
+    'Access-Control-Allow-Origin': origin!,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-API-Key',
     'Access-Control-Allow-Credentials': 'true',
@@ -24,13 +28,14 @@ function getCorsHeaders(origin: string | null) {
 }
 
 // Headers de sécurité
-const securityHeaders = {
+const securityHeaders: Record<string, string> = {
   'X-Frame-Options': 'DENY',
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'strict-origin-when-cross-origin',
   'X-XSS-Protection': '1; mode=block',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
+  'Content-Security-Policy': "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors 'none';",
 };
 
 // Middleware principal
@@ -40,8 +45,22 @@ export default withAuth(
     const origin = request.headers.get('origin');
     const corsHeaders = getCorsHeaders(origin);
 
+    // Reject cross-origin requests from unauthorized origins on API routes
+    if (origin && !corsHeaders && pathname.startsWith('/api/')) {
+      return new NextResponse(null, {
+        status: 403,
+        headers: securityHeaders,
+      });
+    }
+
     // Gestion des requêtes OPTIONS (prévol)
     if (request.method === 'OPTIONS') {
+      if (!corsHeaders) {
+        return new NextResponse(null, {
+          status: 403,
+          headers: securityHeaders,
+        });
+      }
       return new NextResponse(null, {
         status: 204,
         headers: { ...corsHeaders, ...securityHeaders },
@@ -58,7 +77,7 @@ export default withAuth(
       '/auth/register',
       '/dashboard/upgrade/confirmation',
       '/api/v1/subscription/renewal-info',
-      '/api/webhooks/', // Les webhooks gèrent leur propre auth via signatures
+      '/api/webhooks/',
       '/api/v1/payment/s3p/webhook',
       '/api/v1/payment/enkap/webhook',
     ];
@@ -66,10 +85,15 @@ export default withAuth(
     // Vérifier si le chemin est public
     const isPublicPath = publicPaths.some(path => pathname.startsWith(path));
 
+    // Construire les headers à appliquer
+    const headersToApply = corsHeaders
+      ? { ...corsHeaders, ...securityHeaders }
+      : securityHeaders;
+
     // Si le chemin est public, on laisse passer la requête
     if (isPublicPath) {
       const response = NextResponse.next();
-      Object.entries({ ...corsHeaders, ...securityHeaders }).forEach(([key, value]) => {
+      Object.entries(headersToApply).forEach(([key, value]) => {
         response.headers.set(key, value);
       });
       return response;
@@ -77,7 +101,7 @@ export default withAuth(
 
     // Pour les autres chemins, ajouter les headers de sécurité
     const response = NextResponse.next();
-    Object.entries({ ...corsHeaders, ...securityHeaders }).forEach(([key, value]) => {
+    Object.entries(headersToApply).forEach(([key, value]) => {
       response.headers.set(key, value);
     });
     return response;

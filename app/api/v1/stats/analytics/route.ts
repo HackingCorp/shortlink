@@ -1,25 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import prisma from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
+import { requireAuth } from '@/lib/apiAuth';
 
 
 export async function GET(request: NextRequest) {
   try {
     // 1. Authentification et récupération de la session
-
-    const session = await getServerSession(authOptions);
-  
-    if (!session?.user) {
-      return NextResponse.json({ success: false, error: 'Non autorisé' }, { status: 401 });
-    }
-    const userId = parseInt(session.user.id);
+    const auth = await requireAuth(request);
+    if (auth.error) return auth.error;
+    const userId = auth.user!.id;
 
     const { searchParams } = new URL(request.url);
     const teamIdStr = searchParams.get('teamId');
 
     // 2. Logique de contexte (équipe ou personnel)
-    let linkWhereClause: any = { user_id: userId, team_id: null };
+    let linkWhereClause: Prisma.LinkWhereInput = { user_id: userId, team_id: null };
     
     if (teamIdStr) {
       const teamId = parseInt(teamIdStr);
@@ -58,24 +54,22 @@ export async function GET(request: NextRequest) {
       });
     }
     
-    // Vérifier tous les clics
-    const allClicks = await prisma.click.findMany({
-      where: {
-        link_id: { in: userLinks.map(link => link.id) }
-      },
-      select: { 
-        id: true, 
-        link_id: true, 
-        ip_address: true, 
-        country: true, 
-        browser: true, 
-        os: true, 
-        device_type: true, 
-        city: true, 
-        referer: true 
-      }
-    });
-    if (allClicks.length === 0) {
+    const linkIds = userLinks.map(link => link.id);
+    const clickWhere = { link_id: { in: linkIds } };
+
+    // Aggregate total clicks and unique visitors in SQL
+    const [clickAgg, uniqueVisitorAgg] = await Promise.all([
+      prisma.click.count({ where: clickWhere }),
+      prisma.click.groupBy({
+        by: ['ip_address'],
+        where: { ...clickWhere, ip_address: { not: null } },
+      }),
+    ]);
+
+    const totalClicks = clickAgg;
+    const uniqueVisitors = uniqueVisitorAgg.length;
+
+    if (totalClicks === 0) {
       return NextResponse.json({
         success: true,
         data: {
@@ -90,69 +84,83 @@ export async function GET(request: NextRequest) {
         }
       });
     }
-    
-    // 4. Calculs directs avec les données récupérées
-    const totalClicks = allClicks.length;
-    
-    // Visiteurs uniques (IPs distinctes)
-    const uniqueIPs = new Set(allClicks.filter(click => click.ip_address).map(click => click.ip_address));
-    const uniqueVisitors = uniqueIPs.size;
-    
-    // Fonction pour compter et grouper
-    const groupAndCount = (field: keyof typeof allClicks[0]) => {
-      const counts: { [key: string]: number } = {};
-      allClicks.forEach(click => {
-        const value = click[field];
-        if (value && value !== null) {
-          const key = String(value);
-          counts[key] = (counts[key] || 0) + 1;
-        }
-      });
-      
-      return Object.entries(counts)
-        .map(([name, clicks]) => ({ name, clicks }))
-        .sort((a, b) => b.clicks - a.clicks)
-        .slice(0, 10);
-    };
-    
-    const countries = groupAndCount('country');
-    const browsers = groupAndCount('browser');
-    const os = groupAndCount('os');
-    const devices = groupAndCount('device_type');
-    const cities = groupAndCount('city');
-    const referers = groupAndCount('referer');
-    
-    // 5. Préparation de la réponse finale
+
+    // Run all groupBy queries in parallel using SQL aggregation
+    const [countriesRaw, browsersRaw, osRaw, devicesRaw, citiesRaw, referersRaw] = await Promise.all([
+      prisma.click.groupBy({
+        by: ['country'],
+        where: { ...clickWhere, country: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+      prisma.click.groupBy({
+        by: ['browser'],
+        where: { ...clickWhere, browser: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+      prisma.click.groupBy({
+        by: ['os'],
+        where: { ...clickWhere, os: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+      prisma.click.groupBy({
+        by: ['device_type'],
+        where: { ...clickWhere, device_type: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+      prisma.click.groupBy({
+        by: ['city'],
+        where: { ...clickWhere, city: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+      prisma.click.groupBy({
+        by: ['referer'],
+        where: { ...clickWhere, referer: { not: null } },
+        _count: { id: true },
+        orderBy: { _count: { id: 'desc' } },
+        take: 10,
+      }),
+    ]);
+
+    // Transform groupBy results to { name, clicks } format
+    const mapGroupBy = <T extends { _count: { id: number } }>(rows: T[], field: keyof T) =>
+      rows.map(row => ({ name: String(row[field]), clicks: row._count.id }));
+
     const responseData = {
       success: true,
       data: {
         totalClicks,
         uniqueVisitors,
-        countries,
-        browsers,
-        os,
-        devices,
-        cities,
-        referers
+        countries: mapGroupBy(countriesRaw, 'country'),
+        browsers: mapGroupBy(browsersRaw, 'browser'),
+        os: mapGroupBy(osRaw, 'os'),
+        devices: mapGroupBy(devicesRaw, 'device_type'),
+        cities: mapGroupBy(citiesRaw, 'city'),
+        referers: mapGroupBy(referersRaw, 'referer'),
       }
     };
 
     return NextResponse.json(responseData);
 
-  } catch (error: any) {
-    console.error('Erreur détaillée lors de la récupération des statistiques:', {
-      message: error.message,
-      stack: error.stack,
-      name: error.name,
-      code: error.code,
-      meta: error.meta
-    });
-    
+  } catch (error: unknown) {
+    const errMsg = error instanceof Error ? error.message : 'Erreur inconnue';
+    const errObj = error instanceof Error ? { message: error.message, stack: error.stack, name: error.name } : { message: String(error) };
+    console.error('Erreur détaillée lors de la récupération des statistiques:', errObj);
+
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: 'Erreur lors de la récupération des statistiques',
-        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+        details: process.env.NODE_ENV === 'development' ? errMsg : undefined
       },
       { status: 500 }
     );

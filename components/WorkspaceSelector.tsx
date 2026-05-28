@@ -24,6 +24,8 @@ export function WorkspaceSelector() {
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         className="w-full flex items-center justify-between p-2 bg-gray-50 rounded-md border hover:bg-gray-100"
       >
         <div className="flex items-center space-x-2">
@@ -39,7 +41,7 @@ export function WorkspaceSelector() {
 
       {isOpen && (
         <div className="absolute top-full mt-1 w-full bg-white rounded-md shadow-lg border z-10">
-          <ul className="p-1">
+          <ul role="listbox" className="p-1">
             {/* Espace Personnel */}
             <li>
               <button onClick={() => handleSelect(personalContext)} className="w-full text-left flex items-center space-x-2 p-2 rounded hover:bg-gray-100 text-sm">

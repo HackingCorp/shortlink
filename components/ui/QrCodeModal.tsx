@@ -1,6 +1,6 @@
 'use client';
 import { X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type QrCodeModalProps = {
   shortCode: string;
@@ -23,14 +23,31 @@ export function QrCodeModal({ shortCode, onClose }: QrCodeModalProps) {
       .finally(() => setIsLoading(false));
   }, [shortCode]);
 
+  const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClose();
+    }
+  }, [onClose]);
+
+  useEffect(() => {
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
+
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in" onClick={onClose}>
+    <div
+      role="dialog"
+      aria-labelledby="qr-modal-title"
+      aria-describedby="qr-modal-desc"
+      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 animate-fade-in"
+      onClick={onClose}
+    >
       <div className="bg-white p-8 rounded-lg shadow-2xl max-w-sm w-full relative" onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-800">
+        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-800" aria-label="Fermer">
           <X />
         </button>
-        <h2 className="text-2xl font-bold text-center">QR Code</h2>
-        <p className="text-center text-sm text-gray-500 mt-2 font-mono">{`shorty.fr/${shortCode}`}</p>
+        <h2 id="qr-modal-title" className="text-2xl font-bold text-center">QR Code</h2>
+        <p id="qr-modal-desc" className="text-center text-sm text-gray-500 mt-2 font-mono">{`shorty.fr/${shortCode}`}</p>
         <div className="mt-6 aspect-square w-full flex items-center justify-center">
           {isLoading ? (
             <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
@@ -39,7 +56,7 @@ export function QrCodeModal({ shortCode, onClose }: QrCodeModalProps) {
           )}
         </div>
         <a href={qrCodeUrl} download={`qrcode-${shortCode}.png`} className="mt-6 w-full block text-center py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
-            Télécharger
+            Telecharger
         </a>
       </div>
     </div>

@@ -1,9 +1,14 @@
 'use client';
 
+import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
+interface DataPoint {
+  [key: string]: string | number;
+}
+
 interface LineChartProps {
-  data: any[];
+  data: DataPoint[];
   xKey: string;
   yKey: string;
   xAxisLabel?: string;
@@ -12,7 +17,7 @@ interface LineChartProps {
   strokeColor?: string;
 }
 
-export function LineChartComponent({
+export const LineChartComponent = React.memo(function LineChartComponent({
   data,
   xKey,
   yKey,
@@ -37,11 +42,11 @@ export function LineChartComponent({
   };
 
   // Formater les tooltips
-  const CustomTooltip = ({ active, payload, label }: any) => {
+  const CustomTooltip = ({ active, payload, label }: { active?: boolean; payload?: Array<{ value: number }>; label?: string }) => {
     if (active && payload && payload.length) {
       return (
         <div className="bg-white p-3 border border-gray-200 rounded shadow-sm">
-          <p className="font-medium">{formatXAxis(label)}</p>
+          <p className="font-medium">{formatXAxis(label ?? '')}</p>
           <p className="text-sm">
             {tooltipLabel}: <span className="font-semibold">{payload[0].value}</span>
           </p>
@@ -101,4 +106,4 @@ export function LineChartComponent({
       </LineChart>
     </ResponsiveContainer>
   );
-}
+});

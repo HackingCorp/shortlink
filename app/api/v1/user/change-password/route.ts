@@ -59,17 +59,24 @@ export async function POST(req: Request) {
     // Hasher le nouveau mot de passe
     const hashedPassword = await hash(newPassword, 12);
 
-    // Mettre à jour le mot de passe
+    // Update password and invalidate other sessions
+    // The updatedAt field changes automatically (Prisma @updatedAt),
+    // which our JWT callback checks to invalidate stale tokens.
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        password: hashedPassword
-      }
+        password: hashedPassword,
+      },
     });
 
-    return NextResponse.json({ 
+    // Delete all database sessions for this user to force re-login
+    await prisma.session.deleteMany({
+      where: { userId: user.id },
+    });
+
+    return NextResponse.json({
       success: true,
-      message: 'Mot de passe mis à jour avec succès'
+      message: 'Mot de passe mis à jour avec succès. Les autres sessions ont été déconnectées.'
     });
 
   } catch (error) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 import { processClickInBackground } from '@/lib/analytics';
 import { UAParser } from 'ua-parser-js';
-import { getClientIp } from 'request-ip';
+import { getGeoInfo } from '@/lib/geoLocation';
 
 
 function normalizeUrl(url: string): string {
@@ -10,132 +10,6 @@ function normalizeUrl(url: string): string {
     return url;
   }
   return `https://${url}`;
-}
-
-async function getGeoInfo(ip: string) {
-  try {
-    // Vérifier les adresses locales
-    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
-      console.log('IP locale détectée, utilisation des valeurs par défaut');
-      return { 
-        country: 'Local', 
-        city: 'Local', 
-        raw_data: { isLocal: true } 
-      };
-    }
-
-    console.log(`Tentative de géolocalisation pour l'IP: ${ip}`);
-    
-    const fetchWithTimeout = async (url: string, options = {}, timeout = 2000) => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      
-      try {
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal
-        });
-        clearTimeout(timeoutId);
-        return response;
-      } catch (error) {
-        clearTimeout(timeoutId);
-        throw error;
-      }
-    };
-
-
-    try {
-      console.log('Essai avec ip-api.com...');
-      const response = await fetchWithTimeout(
-        `http://ip-api.com/json/${ip}?fields=status,message,country,countryCode,city,region,regionName,isp,org,as,mobile,proxy,hosting,query`
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Réponse de ip-api.com:', JSON.stringify(data, null, 2));
-        
-        if (data.status === 'success' && data.country) {
-          return {
-            country: data.country,
-            city: data.city || data.regionName || 'Inconnu',
-            raw_data: { source: 'ip-api.com', ...data }
-          };
-        }
-      }
-    } catch (error) {
-      console.warn('Échec avec ip-api.com:', error instanceof Error ? error.message : String(error));
-    }
-
-    try {
-      console.log('Essai avec ipinfo.io...');
-      const response = await fetchWithTimeout(
-        `https://ipinfo.io/${ip}/json?token=${process.env.IPINFO_TOKEN || 'test'}`,
-        {},
-        5000 
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Réponse de ipinfo.io:', JSON.stringify(data, null, 2));
-
-        if (data.country) {
-          return {
-            country: data.country,
-            city: data.city || data.region || 'Inconnu',
-            raw_data: { source: 'ipinfo.io', ...data }
-          };
-        }
-      }
-    } catch (error) {
-      console.warn('Échec avec ipinfo.io:', error instanceof Error ? error.message : String(error));
-    }
-
-
-    try {
-      console.log('Dernier essai avec ipapi.co...');
-      const response = await fetchWithTimeout(
-        `https://ipapi.co/${ip}/json/`,
-        { headers: { 'User-Agent': 'shortlink-app/1.0' } }
-      );
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Réponse de ipapi.co:', JSON.stringify(data, null, 2));
-        
-        if (data.country_name) {
-          return {
-            country: data.country_name,
-            city: data.city || data.region || 'Inconnu',
-            raw_data: { source: 'ipapi.co', ...data }
-          };
-        }
-      }
-    } catch (error) {
-      console.warn('Échec avec ipapi.co:', error instanceof Error ? error.message : String(error));
-    }
-
-  
-    console.warn('Toutes les tentatives de géolocalisation ont échoué');
-    return {
-      country: 'Inconnu',
-      city: 'Inconnu',
-      raw_data: { 
-        error: 'Toutes les tentatives de géolocalisation ont échoué',
-        timestamp: new Date().toISOString()
-      }
-    };
-
-  } catch (error) {
-    console.error('Erreur critique dans getGeoInfo:', error);
-    return { 
-      country: 'Erreur', 
-      city: 'Erreur', 
-      raw_data: { 
-        error: error instanceof Error ? error.message : 'Erreur inconnue',
-        timestamp: new Date().toISOString()
-      } 
-    };
-  }
 }
 
 export async function GET(
@@ -190,9 +64,8 @@ export async function GET(
     }
     
  
-    let ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || 
-             req.headers.get('x-real-ip') || 
-             (req as any).socket?.remoteAddress || 
+    let ip = req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+             req.headers.get('x-real-ip') ||
              '0.0.0.0';
     
 

@@ -24,7 +24,7 @@ function buildBaseString(method: string, url: string, params: Record<string, any
 }
 
 /**
- * Génère une signature HMAC-SHA1 pour les requêtes S3P
+ * Génère une signature HMAC-SHA256 pour les requêtes S3P
  */
 export function generateS3PSignature({
   method,
@@ -38,7 +38,7 @@ export function generateS3PSignature({
   secret: string;
 }): string {
   const baseString = buildBaseString(method, url, params);
-  const hmac = crypto.createHmac('sha1', secret);
+  const hmac = crypto.createHmac('sha256', secret);
   hmac.update(baseString);
   return hmac.digest('base64');
 }
@@ -60,5 +60,8 @@ export function verifyS3PSignature({
   signature: string;
 }): boolean {
   const expectedSignature = generateS3PSignature({ method, url, params, secret });
-  return expectedSignature === signature;
+  const expected = Buffer.from(expectedSignature);
+  const received = Buffer.from(signature);
+  if (expected.length !== received.length) return false;
+  return crypto.timingSafeEqual(expected, received);
 }

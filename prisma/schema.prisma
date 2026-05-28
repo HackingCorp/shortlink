@@ -112,6 +112,8 @@ model User {
   verificationCodeExpiry DateTime?
   subscriptionId         String?
   customerId             String?
+  loginAttempts          Int              @default(0)
+  lockedUntil            DateTime?
   accounts               Account[]
   apiKeys                ApiKey[]
   clicks                 Click[]
@@ -123,6 +125,8 @@ model User {
   teamMemberships        TeamMember[]
   transactions           Transaction[]
   teams                  Team[]           @relation("TeamMembers")
+
+  @@index([email])
 }
 model Plan {
   id          String   @id @default(uuid())
@@ -222,6 +226,8 @@ model Click {
   @@index([user_id])
   @@index([country])
   @@index([link_id, clicked_at])
+  @@index([ip_address])
+  @@index([user_id, clicked_at])
 }
 
 model ApiKey {
