@@ -56,7 +56,7 @@ services:
       - "traefik.http.routers.shortlink.tls.certresolver=le"
       - "traefik.http.services.shortlink.loadbalancer.server.port=3200"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3200"]
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:3200"]
       interval: 30s
       timeout: 10s
       retries: 3
