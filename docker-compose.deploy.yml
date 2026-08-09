@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        - DB_PASSWORD=kutes_secure_2024
+        - DB_PASSWORD=8b432ab85c4d1aaddb088c76c7d13019d1f144a6
         - S3P_BASE_URL=https://s3pv2cm.smobilpay.com/v2
         - S3P_ACCESS_TOKEN=9183eee1-bf8b-49cb-bffc-d466706d3aef
         - S3P_ACCESS_SECRET=c5821829-a9db-4cf1-9894-65e3caffaa62
@@ -24,11 +24,11 @@ services:
       - NEXTAUTH_URL=https://kut.es
       - NEXT_PUBLIC_BASE_URL=https://kut.es
       - NEXT_PUBLIC_APP_URL=https://kut.es
-      - DATABASE_URL=postgresql://kutes:kutes_secure_2024@kutes-db:5432/kutes_prod?schema=public&connection_limit=20
-      - DB_PASSWORD=kutes_secure_2024
-      - NEXTAUTH_SECRET=q8vNnZCJMt4wop+v3lIxmtpBENULwLHDIkLDj/Hdxls=
-      - JWT_SECRET=Y5ScwAwBeaZ9JbExKRJ6zP2rT42UDijSDMH+D1QfEn4=
-      - HASH_SECRET=44kyTt2nUszJTiRlpwPUPpLc/X1jXhUP0weaQB3eQ+8=
+      - DATABASE_URL=postgresql://kutes:8b432ab85c4d1aaddb088c76c7d13019d1f144a6@kutes-db:5432/kutes_prod?schema=public&connection_limit=20
+      - DB_PASSWORD=8b432ab85c4d1aaddb088c76c7d13019d1f144a6
+      - NEXTAUTH_SECRET=IvvR4RvH+27q8y//OKkjdf2A5y1V1Yk56zq98URwlFw=
+      - JWT_SECRET=qL39L3+A/0nu3MpmI9sA4FHoM7nHhALCn1068tyvxas=
+      - HASH_SECRET=dUTdKSMjts6OtNDZOstpxt+OJhGX2wM8CjgHE5L3TUw=
       - REDIS_URL=redis://:4f2e68a3d16a981025f6040a150bb69111de793ab54ed4b0@kut-redis:6379
       - SMTP_HOST=smtp.gmail.com
       - SMTP_PORT=587
