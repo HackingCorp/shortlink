@@ -86,10 +86,14 @@ export default function LinksPage() {
         });
         const result = await response.json();
         if (!result.success) throw new Error(result.error);
-        
-        toast.success('Lien créé avec succès !');
-        
-        if (result.data && result.data.short_code) {
+
+        if (result.existing) {
+          toast.success('Cette URL avait déjà un lien court : le raccourci existant a été réutilisé.');
+        } else {
+          toast.success('Lien créé avec succès !');
+        }
+
+        if (!result.existing && result.data && result.data.short_code) {
           setLinks([{
             id: result.data.id,
             short_code: result.data.short_code,

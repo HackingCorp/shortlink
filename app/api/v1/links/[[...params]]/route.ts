@@ -28,11 +28,13 @@ export async function POST(req: NextRequest) {
     }
 
     // Validation de l'URL
+    let normalizedUrl = longUrl;
     try {
       const urlToValidate = longUrl.startsWith('http://') || longUrl.startsWith('https://')
         ? longUrl
         : `https://${longUrl}`;
       const parsedUrl = new URL(urlToValidate);
+      normalizedUrl = urlToValidate;
 
       // N'autoriser que http et https
       if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
@@ -90,6 +92,43 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Déterminer l'ID utilisateur pour le lien
+    const userId: number | null = currentUser ? currentUser.id : null;
+
+    // Un même lien ne doit pas avoir plusieurs raccourcis : si cette URL a déjà
+    // été raccourcie dans le même contexte (même équipe, même utilisateur, ou
+    // anonyme), on renvoie le lien court existant au lieu d'en créer un nouveau.
+    // On compare aussi la forme brute pour retrouver les liens créés avant la
+    // normalisation (URL stockée sans protocole).
+    const existingForUrl = await prisma.link.findFirst({
+      where: {
+        long_url: { in: [longUrl, normalizedUrl] },
+        ...(finalTeamId ? { team_id: finalTeamId } : { user_id: userId, team_id: null }),
+        OR: [{ expires_at: null }, { expires_at: { gt: new Date() } }],
+      },
+      orderBy: { created_at: 'asc' },
+      include: { user: true, team: true },
+    });
+
+    if (existingForUrl) {
+      const { config } = await import('@/lib/config');
+      return NextResponse.json({
+        success: true,
+        existing: true,
+        data: {
+          longUrl: existingForUrl.long_url,
+          shortUrl: `${config.appUrl}/${existingForUrl.short_code}`,
+          short_code: existingForUrl.short_code,
+          title: existingForUrl.title,
+          createdAt: existingForUrl.created_at,
+          userId: existingForUrl.user_id,
+          teamId: existingForUrl.team_id,
+          linkedToUser: !!existingForUrl.user_id,
+          userName: existingForUrl.user?.name || existingForUrl.user?.email || 'Unknown'
+        }
+      });
+    }
+
     // Vérifier si un slug personnalisé est fourni et si l'utilisateur a la permission
     if (customSlug) {
       if (!canCustomize) {
@@ -129,13 +168,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Déterminer l'ID utilisateur pour le lien
-    const userId: number | null = currentUser ? currentUser.id : null;
-
     // Créer le lien
     try {
       const linkData: Prisma.LinkUncheckedCreateInput = {
-        long_url: longUrl,
+        long_url: normalizedUrl,
         short_code: customSlug || await generateShortCode(prisma),
         title: title || null,
         ...(expiresAt && { expires_at: new Date(expiresAt) }),
